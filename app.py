@@ -430,6 +430,6 @@ st.markdown("""
     box-shadow: none;
     backdrop-filter: none;
 ">
-    <p style="margin: 0;">Copyright VO QUOC HIEU (hieuvoquoc@gmail.com)</p>
+    <p style="margin: 0;">Copyright hieuvoquoc@gmail.com (V1.01)</p>
 </div>
 """, unsafe_allow_html=True)
