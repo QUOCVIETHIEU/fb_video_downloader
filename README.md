@@ -1,0 +1,63 @@
+# Facebook Video Downloader (Python, yt-dlp)
+
+> **Use responsibly.** Only download videos you own or have permission to save. Respect copyright, privacy, and the Facebook Terms of Service.
+
+## Quick start
+1. Install Python 3.9+
+2. Create a virtual env (optional) and install deps:
+   ```bash
+   pip install -r requirements.txt
+   ```
+3. Run:
+   ```bash
+   python fb_downloader.py "<facebook_video_url>" --no-check-certificate
+   ```
+   Output goes to `downloads/` by default. The `--no-check-certificate` flag helps avoid SSL certificate issues.
+
+## Private videos / login
+If a video needs you to be logged-in, export cookies from your browser to a `cookies.txt` file (Netscape format), then pass `--cookies cookies.txt`:
+```bash
+python fb_downloader.py "<url>" --cookies cookies.txt --no-check-certificate
+```
+Tips to export cookies:
+- Use a browser extension like "Get cookies.txt" for Chrome/Firefox.
+- Make sure the cookies are from the same domain as the video page (e.g. `facebook.com`).  
+  Keep your cookies private—**they grant access to your account**.
+
+## Custom filename
+You can change the filename template using `--template`. Defaults to:
+```
+downloads/%(title).80s-%(id)s.%(ext)s
+```
+Examples:
+```bash
+python fb_downloader.py "https://www.facebook.com/reel/1693153308013202" --template "downloads/%(uploader)s/%(upload_date)s-%(title)s.%(ext)s" --no-check-certificate
+```
+See more fields: https://github.com/yt-dlp/yt-dlp#output-template
+
+## Common examples
+```bash
+# Best available quality (default)
+python fb_downloader.py "<url>" --no-check-certificate
+
+# Force MP4 if possible
+python fb_downloader.py "<url>" --format "bestvideo[ext=mp4]+bestaudio[ext=m4a]/mp4" --no-check-certificate
+
+# Audio-only (if available)
+python fb_downloader.py "<url>" --format "bestaudio/best" --template "downloads/%(title)s.%(ext)s" --no-check-certificate
+
+python fb_downloader.py "https://www.facebook.com/reel/1239868574109827" --format "bestaudio/best" --template "downloads/%(title)s.%(ext)s" --no-check-certificate
+
+# Throttled networks: lower concurrency, rate limit
+python fb_downloader.py "<url>" --rate-limit "1M" --concurrent-fragments 1 --no-check-certificate
+```
+
+## Notes
+- This tool uses `yt-dlp`, which supports Facebook URLs and many sites.
+- Some videos may not be downloadable due to site changes or restrictions.
+- Do **not** try to bypass DRM or other technical protection measures.
+- **SSL Certificate Issues**: If you encounter SSL certificate errors, use the `--no-check-certificate` flag (already included in examples above).
+- If downloads fail, try passing cookies, or update `yt-dlp`:
+  ```bash
+  pip install -U yt-dlp
+  ```
