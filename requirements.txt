@@ -1,1 +1,4 @@
-yt-dlp>=2025.1.0
+streamlit>=1.28.0
+yt-dlp>=2023.12.30
+pathlib2>=2.3.7
+requests>=2.31.0
