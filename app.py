@@ -202,12 +202,16 @@ if st.session_state.video_info:
                 st.info("No thumbnail available")
     with col_right:
         download_type = st.selectbox("**Type:**", ["Video + Audio", "Audio Only"], index=0)
-        if st.session_state.formats:
+        if st.session_state.formats and download_type == "Video + Audio":
             format_labels = [f['label'] for f in st.session_state.formats]
             selected_idx = st.selectbox("**Quality:**", range(len(format_labels)),
                                         format_func=lambda x: format_labels[x], index=0)
             selected_format = st.session_state.formats[selected_idx]
-            fmt = selected_format['format_id']
+            # Sử dụng format kết hợp để đảm bảo có cả video và audio
+            fmt = f"{selected_format['format_id']}+bestaudio/best[height<={selected_format['height']}]/best"
+        elif download_type == "Audio Only":
+            st.selectbox("Quality:", ["Best Audio Available"], index=0, disabled=True)
+            fmt = "bestaudio/best"
         else:
             st.selectbox("Quality:", ["Best Available"], index=0, disabled=True)
             fmt = "bv*+ba/b"
@@ -228,7 +232,6 @@ if st.session_state.video_info:
             st.markdown(f"&nbsp;&nbsp;&nbsp;&nbsp; - Views: {info.get('view_count', 0):,}", unsafe_allow_html=True)
         st.markdown("---")
         if download_type == "Audio Only":
-            fmt = "bestaudio/best"
             outtmpl = "downloads/%(title)s.%(ext)s"
         else:
             outtmpl = "downloads/%(title).80s-%(id)s.%(ext)s"
@@ -292,6 +295,11 @@ def build_opts(
         "format": fmt,
         "quiet": False,
         "no_warnings": False,
+        "merge_output_format": "mp4",  # Đảm bảo merge thành mp4
+        "postprocessors": [{
+            "key": "FFmpegVideoConvertor",
+            "preferedformat": "mp4",
+        }] if not fmt.startswith("bestaudio") else [],
     }
     if rate_limit:
         opts["ratelimit"] = rate_limit
