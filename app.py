@@ -5,7 +5,7 @@ from typing import Optional, Dict, Any
 
 st.set_page_config(
     page_title="FB Video Downloader", 
-    page_icon="", 
+    page_icon="assets/fb_downloader.png", 
     layout="wide",
     initial_sidebar_state="collapsed"
 )
