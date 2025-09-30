@@ -134,16 +134,32 @@ if url and url.strip() and (not st.session_state.video_info or st.session_state.
             st.session_state.video_info = video_info
             formats = video_info.get('formats', [])
             unique_formats = {}
+            
+            # Ưu tiên format có cả video và audio
             for f in formats:
                 if f.get('vcodec') != 'none' and f.get('height'):
                     height = f.get('height', 0)
                     ext = f.get('ext', 'mp4')
                     filesize = f.get('filesize') or 0
                     fps = f.get('fps') or 0
+                    has_audio = f.get('acodec') and f.get('acodec') != 'none'
+                    
                     key = f"{height}p-{ext.upper()}"
-                    current_filesize = unique_formats.get(key, {}).get('filesize', 0) or 0
-                    if key not in unique_formats or filesize > current_filesize:
+                    current_format = unique_formats.get(key)
+                    
+                    # Ưu tiên format có audio hoặc filesize lớn hơn
+                    should_replace = False
+                    if key not in unique_formats:
+                        should_replace = True
+                    elif has_audio and not current_format.get('has_audio'):
+                        should_replace = True
+                    elif has_audio == current_format.get('has_audio') and filesize > (current_format.get('filesize') or 0):
+                        should_replace = True
+                    
+                    if should_replace:
                         quality_label = f"{height}p - {ext.upper()}"
+                        if has_audio:
+                            quality_label += " (with audio)"
                         if fps > 0:
                             quality_label += f" ({fps}fps)"
                         if filesize > 0:
@@ -154,10 +170,12 @@ if url and url.strip() and (not st.session_state.video_info or st.session_state.
                             'label': quality_label,
                             'height': height,
                             'ext': ext,
-                            'filesize': filesize
+                            'filesize': filesize,
+                            'has_audio': has_audio
                         }
+            
             video_formats = list(unique_formats.values())
-            video_formats.sort(key=lambda x: x['height'], reverse=True)
+            video_formats.sort(key=lambda x: (x.get('has_audio', False), x['height']), reverse=True)
             st.session_state.formats = video_formats
 
 # ===================== UI PREVIEW & OPTIONS =====================
@@ -207,14 +225,14 @@ if st.session_state.video_info:
             selected_idx = st.selectbox("**Quality:**", range(len(format_labels)),
                                         format_func=lambda x: format_labels[x], index=0)
             selected_format = st.session_state.formats[selected_idx]
-            # Sử dụng format kết hợp để đảm bảo có cả video và audio
-            fmt = f"{selected_format['format_id']}+bestaudio/best[height<={selected_format['height']}]/best"
+            # Sử dụng format đơn giản để tránh merge error, ưu tiên format có sẵn audio
+            fmt = f"best[height<={selected_format['height']}]/best"
         elif download_type == "Audio Only":
             st.selectbox("Quality:", ["Best Audio Available"], index=0, disabled=True)
             fmt = "bestaudio/best"
         else:
             st.selectbox("Quality:", ["Best Available"], index=0, disabled=True)
-            fmt = "bv*+ba/b"
+            fmt = "best"
         if info.get('description'):
             st.markdown("##### Description:")
             desc = info.get('description', '')
@@ -236,7 +254,7 @@ if st.session_state.video_info:
         else:
             outtmpl = "downloads/%(title).80s-%(id)s.%(ext)s"
 else:
-    fmt = "bv*+ba/b"
+    fmt = "best"
     outtmpl = "downloads/%(title).80s-%(id)s.%(ext)s"
 
 # ===================== PROGRESS ZONE =====================
@@ -295,11 +313,7 @@ def build_opts(
         "format": fmt,
         "quiet": False,
         "no_warnings": False,
-        "merge_output_format": "mp4",  # Đảm bảo merge thành mp4
-        "postprocessors": [{
-            "key": "FFmpegVideoConvertor",
-            "preferedformat": "mp4",
-        }] if not fmt.startswith("bestaudio") else [],
+        "ffmpeg_location": "/opt/homebrew/bin/ffmpeg",  # Chỉ định đường dẫn ffmpeg
     }
     if rate_limit:
         opts["ratelimit"] = rate_limit
