@@ -225,14 +225,18 @@ if st.session_state.video_info:
             selected_idx = st.selectbox("**Quality:**", range(len(format_labels)),
                                         format_func=lambda x: format_labels[x], index=0)
             selected_format = st.session_state.formats[selected_idx]
-            # Sử dụng format đơn giản để tránh merge error, ưu tiên format có sẵn audio
-            fmt = f"best[height<={selected_format['height']}]/best"
+            # Cho Streamlit Cloud: ưu tiên format có audio, tránh merge
+            if selected_format.get('has_audio'):
+                fmt = selected_format['format_id']  # Sử dụng trực tiếp format có audio
+            else:
+                # Fallback: tìm format tương tự có audio hoặc dùng best
+                fmt = f"best[height<={selected_format['height']}][acodec!=none]/best[acodec!=none]/best"
         elif download_type == "Audio Only":
             st.selectbox("Quality:", ["Best Audio Available"], index=0, disabled=True)
             fmt = "bestaudio/best"
         else:
             st.selectbox("Quality:", ["Best Available"], index=0, disabled=True)
-            fmt = "best"
+            fmt = "best[acodec!=none]/best"
         if info.get('description'):
             st.markdown("##### Description:")
             desc = info.get('description', '')
@@ -248,13 +252,19 @@ if st.session_state.video_info:
         st.markdown(f"&nbsp;&nbsp;&nbsp;&nbsp; - Duration: {info.get('duration_string', 'N/A')}", unsafe_allow_html=True)
         if info.get('view_count'):
             st.markdown(f"&nbsp;&nbsp;&nbsp;&nbsp; - Views: {info.get('view_count', 0):,}", unsafe_allow_html=True)
+        
+        # Debug info cho Streamlit Cloud
+        import shutil
+        ffmpeg_available = bool(shutil.which("ffmpeg"))
+        st.markdown(f"&nbsp;&nbsp;&nbsp;&nbsp; - FFmpeg: {'✅ Available' if ffmpeg_available else '❌ Not found'}", unsafe_allow_html=True)
         st.markdown("---")
         if download_type == "Audio Only":
             outtmpl = "downloads/%(title)s.%(ext)s"
         else:
             outtmpl = "downloads/%(title).80s-%(id)s.%(ext)s"
 else:
-    fmt = "best"
+    # Fallback cho môi trường chưa load video info
+    fmt = "best[acodec!=none]/best"  # Ưu tiên format có audio
     outtmpl = "downloads/%(title).80s-%(id)s.%(ext)s"
 
 # ===================== PROGRESS ZONE =====================
@@ -293,6 +303,10 @@ def build_opts(
     proxy: Optional[str],
     no_check_certificate: bool = False
 ) -> Dict[str, Any]:
+    # Tự động phát hiện môi trường
+    import shutil
+    ffmpeg_path = shutil.which("ffmpeg")
+    
     opts: Dict[str, Any] = {
         "outtmpl": outtmpl,
         "restrictfilenames": False,
@@ -304,7 +318,7 @@ def build_opts(
         "retries": retries,
         "fragment_retries": retries,
         "continuedl": True,
-        "concurrent_fragment_downloads": concurrent_fragments or 3,
+        "concurrent_fragment_downloads": concurrent_fragments or 1,  # Giảm concurrent cho Streamlit Cloud
         "ratelimit": None,
         "http_headers": {
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36",
@@ -313,8 +327,14 @@ def build_opts(
         "format": fmt,
         "quiet": False,
         "no_warnings": False,
-        "ffmpeg_location": "/opt/homebrew/bin/ffmpeg",  # Chỉ định đường dẫn ffmpeg
     }
+    
+    # Chỉ thêm ffmpeg_location nếu tìm thấy ffmpeg
+    if ffmpeg_path:
+        opts["ffmpeg_location"] = ffmpeg_path
+    else:
+        # Streamlit Cloud: tránh merge bằng cách ưu tiên format đơn
+        st.warning("⚠️ FFmpeg not available. Using single-stream format for better compatibility.")
     if rate_limit:
         opts["ratelimit"] = rate_limit
     if cookies_path:
