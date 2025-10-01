@@ -14,6 +14,27 @@ st.set_page_config(
 # ===================== CSS (đã thêm fix viền đỏ cho button) =====================
 st.markdown("""
 <style>
+    /* CSS Variables for theme-responsive colors */
+    :root {
+        --text-color: #333333;
+    }
+    
+    /* Dark theme support */
+    @media (prefers-color-scheme: dark) {
+        :root {
+            --text-color: #ffffff;
+        }
+    }
+    
+    /* Streamlit dark theme class override */
+    .stApp[data-theme="dark"] {
+        --text-color: #ffffff;
+    }
+    
+    .stApp[data-theme="light"] {
+        --text-color: #333333;
+    }
+
     .main-header {
         text-align: center;
         padding: 1rem 0;
@@ -496,14 +517,14 @@ else:
         st.markdown("""
         <div style="
             background: rgba(255, 255, 255, 0.05);
-            color: #333;
+            color: var(--text-color);
             padding: 1.5rem;
             border-radius: 15px;
             text-align: center;
             margin: 2rem 0;
             border: 1px solid rgba(200, 200, 200, 0.2);
         ">
-        <h3 style="margin: 0 0 0.5rem 0; font-weight: 600; text-align: left;">
+        <h3 style="margin: 0 0 0.5rem 0; font-weight: 600; text-align: left; color: inherit;">
             How To Download Videos
         </h3>
         <div style="
@@ -525,7 +546,7 @@ else:
                     margin-right: 1rem;
                     font-weight: bold;
                 ">1</span>
-                <span style="font-size: 1.1rem;">Copy Facebook video or reel Url</span>
+                <span style="font-size: 1.1rem; color: inherit;">Copy Facebook video or reel Url</span>
             </div>
             <div style="display: flex; align-items: center; justify-content: flex-start; margin-bottom: 1rem;">
                 <span style="
@@ -540,7 +561,7 @@ else:
                     margin-right: 1rem;
                     font-weight: bold;
                 ">2</span>
-                <span style="font-size: 1.1rem;">Paste Url in the input box above</span>
+                <span style="font-size: 1.1rem; color: inherit;">Paste Url in the input box above</span>
             </div>
             <div style="display: flex; align-items: center; justify-content: flex-start;">
                 <span style="
@@ -555,7 +576,7 @@ else:
                     margin-right: 1rem;
                     font-weight: bold;
                 ">3</span>
-                <span style="font-size: 1.1rem;">Press Enter to start automatic download</span>
+                <span style="font-size: 1.1rem; color: inherit;">Press Enter to start automatic download</span>
             </div>
         </div>
     </div>
