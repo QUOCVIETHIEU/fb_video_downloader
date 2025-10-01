@@ -243,8 +243,9 @@ if url and url.strip() and url.strip() != st.session_state.current_url:
     st.session_state.download_completed = False
     st.session_state.downloaded_file = None
     st.session_state.current_url = url.strip()
+    
     # Nếu muốn mỗi URL là log mới, uncomment dòng dưới:
-    # st.session_state.detailed_logs.clear()
+    st.session_state.detailed_logs.clear()
 
     with st.spinner("Getting video information..."):
         video_info = get_video_info(url.strip())
@@ -580,6 +581,6 @@ st.markdown("""
     box-shadow: none;
     backdrop-filter: none;
 ">
-    <p style="margin: 0;">Copyright © hieuvoquoc@gmail.com (V1.02)</p>
+    <p style="margin: 0;">Copyright © hieuvoquoc@gmail.com (V1.03)</p>
 </div>
 """, unsafe_allow_html=True)
