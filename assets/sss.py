@@ -14,6 +14,27 @@ st.set_page_config(
 # ===================== CSS (đã thêm fix viền đỏ cho button) =====================
 st.markdown("""
 <style>
+    /* CSS Variables for theme-responsive colors */
+    :root {
+        --text-color: #333333;
+    }
+    
+    /* Dark theme support */
+    @media (prefers-color-scheme: dark) {
+        :root {
+            --text-color: #ffffff;
+        }
+    }
+    
+    /* Streamlit dark theme class override */
+    .stApp[data-theme="dark"] {
+        --text-color: #ffffff;
+    }
+    
+    .stApp[data-theme="light"] {
+        --text-color: #333333;
+    }
+
     .main-header {
         text-align: center;
         padding: 1rem 0;
@@ -37,11 +58,7 @@ st.markdown("""
         -webkit-appearance: none;                 /* Safari */
         text-align: center;
     }
-    /* Khi hover */
-    .stDownloadButton > button:hover {
-        filter: brightness(1.05);
-    }
-    /* Khi focus/active: loại bỏ viền đỏ/focus ring mặc định */
+    .stDownloadButton > button:hover { filter: brightness(1.05); }
     .stDownloadButton > button:focus,
     .stDownloadButton > button:focus-visible,
     .stDownloadButton > button:active {
@@ -49,19 +66,8 @@ st.markdown("""
         box-shadow: none !important;
         border: 1px solid transparent !important;
     }
-    /* Firefox */
-    .stDownloadButton > button::-moz-focus-inner { 
-        border: 0 !important; 
-    }
-    /* (Tuỳ chọn) Nếu muốn vẫn có focus ring xanh nhạt, dùng block dưới và bỏ block trên:
-    .stDownloadButton > button:focus,
-    .stDownloadButton > button:focus-visible {
-        outline: none !important;
-        box-shadow: 0 0 0 3px rgba(59,130,246,.45) !important;
-        border: 1px solid transparent !important;
-    } */
+    .stDownloadButton > button::-moz-focus-inner { border: 0 !important; }
 
-    /* Thanh video preview khung tối (tuỳ chỉnh nhẹ) */
     .preview-wrap {
         height: 500px; 
         display: flex; 
@@ -72,20 +78,15 @@ st.markdown("""
         overflow: hidden; 
         background-color: #2b2b2b;
     }
-            
-    /* Placeholder text nghiêng */               
-    input::placeholder {
-        font-style: italic;
-        color: #999;
-    }
+    input::placeholder { font-style: italic; color: #999; }
 </style>
 """, unsafe_allow_html=True)
 
 # ===================== HEADER =====================
 st.markdown("""
 <div class="main-header">
-    <h1>FB Video Downloader</h1>
-    <p>Fast and secure Facebook video downloader</p>
+    <h1>Social Video Downloader</h1>
+    <p>Fast and secure Facebook & YouTube video downloader</p>
 </div>
 """, unsafe_allow_html=True)
 
@@ -100,6 +101,9 @@ if 'downloaded_file' not in st.session_state:
     st.session_state.downloaded_file = None
 if 'current_url' not in st.session_state:
     st.session_state.current_url = ""
+# NEW: giữ log giữa các lần rerun
+if 'detailed_logs' not in st.session_state:
+    st.session_state.detailed_logs = []
 
 # ===================== IMPORT =====================
 try:
@@ -118,10 +122,11 @@ no_check_cert = True
 # ===================== INPUT URL =====================
 st.markdown("### Enter Video URL")
 url = st.text_input(
-    "ⓕ Facebook video Url:", 
-    placeholder="https://www.facebook.com/reel/...", 
-    help="Paste your Facebook video or reel URL here and press Enter",
-    key="url_input",)
+    "✦︎ Video Url:", 
+    placeholder="Enter video URL here...", 
+    help="Paste your Facebook or YouTube video URL here and press Enter",
+    key="url_input",
+)
 
 # ===================== GET INFO =====================
 def get_video_info(video_url, max_retries=3):
@@ -145,16 +150,17 @@ def get_video_info(video_url, max_retries=3):
             error_msg = str(e)
             if "Cannot parse data" in error_msg and attempt < max_retries - 1:
                 st.warning(f"⚠️ Attempt {attempt + 1} failed. Retrying... ({attempt + 2}/{max_retries})")
-                time.sleep(2)  # Wait 2 seconds before retry
+                time.sleep(2)
                 continue
             elif "Cannot parse data" in error_msg:
-                st.error("❌ Facebook changed their page structure. Please try again in a few moments or use a different video URL.")
+                st.error("❌ Platform changed their page structure. Please try again in a few moments or use a different video URL.")
                 with st.expander("🔧 Troubleshooting Tips"):
                     st.markdown("""
                     - **Refresh the page** and try again
-                    - **Copy the URL again** from Facebook
+                    - **Copy the URL again** from the platform
                     - **Try a different video** to test if the issue is specific
-                    - **Wait a few minutes** - Facebook sometimes blocks requests temporarily
+                    - **Wait a few minutes** - Platform sometimes blocks requests temporarily
+                    - **Check URL format** - Make sure it's a valid Facebook or YouTube URL
                     """)
             else:
                 st.error(f"❌ Failed to get video info: {error_msg}")
@@ -182,10 +188,7 @@ def build_opts(
     no_check_certificate: bool = False,
     is_audio_only: bool = False
 ) -> Dict[str, Any]:
-    
-    # Auto-detect ffmpeg
     ffmpeg_path = shutil.which("ffmpeg")
-    
     opts: Dict[str, Any] = {
         "outtmpl": outtmpl,
         "restrictfilenames": False,
@@ -207,12 +210,9 @@ def build_opts(
         "quiet": False,
         "no_warnings": False,
     }
-    
-    # Add ffmpeg location if available
     if ffmpeg_path:
         opts["ffmpeg_location"] = ffmpeg_path
-    
-    # Audio-only specific settings
+
     if is_audio_only:
         opts["postprocessors"] = [{
             'key': 'FFmpegExtractAudio',
@@ -221,26 +221,23 @@ def build_opts(
         }]
         opts["merge_output_format"] = "mp3"
     else:
-        # Video + Audio settings
-        if "+" in fmt and ffmpeg_path:  # Only add postprocessors if merging and ffmpeg available
+        if "+" in fmt and ffmpeg_path:
             opts["postprocessors"] = [{
                 'key': 'FFmpegVideoConvertor',
                 'preferedformat': 'mp4',
             }]
             opts["merge_output_format"] = "mp4"
-    
-    if rate_limit:
-        opts["ratelimit"] = rate_limit
-    if cookies_path:
-        opts["cookiefile"] = cookies_path
-    if proxy:
-        opts["proxy"] = proxy
-    
+
+    if rate_limit: opts["ratelimit"] = rate_limit
+    if cookies_path: opts["cookiefile"] = cookies_path
+    if proxy: opts["proxy"] = proxy
     return opts
 
 last_percent = 0
 file_out = None
-error_logs = []
+
+# Dùng logs trong session để không mất khi rerun
+error_logs = st.session_state.detailed_logs
 
 def progress_hook(d):
     global last_percent, file_out
@@ -253,81 +250,85 @@ def progress_hook(d):
             last_percent = percent
         spd = d.get("speed")
         eta = d.get("eta")
-        status_text = f"{percent}% | { (spd and f'{spd/1024/1024:.2f} MB/s') or '–' } | ETA: {eta or '–'} s"
+        status_text = f"{percent}% | {(spd and f'{spd/1024/1024:.2f} MB/s') or '–'} | ETA: {eta or '–'} s"
         log_area.info(status_text)
+        error_logs.append(f"PROGRESS: {status_text}")
     elif d.get("status") == "finished":
         file_out = d.get("filename")
         progress.progress(100, text="Processing & finalizing...")
-        log_area.info(f"Processing: {Path(file_out).name}")
+        msg = f"Processing: {Path(file_out).name}"
+        log_area.info(msg)
+        error_logs.append(f"INFO: {msg}")
 
 # Auto-download khi URL đổi
 if url and url.strip() and url.strip() != st.session_state.current_url:
-    # Reset download state
     st.session_state.download_completed = False
     st.session_state.downloaded_file = None
     st.session_state.current_url = url.strip()
     
+    # Nếu muốn mỗi URL là log mới, uncomment dòng dưới:
+    st.session_state.detailed_logs.clear()
+
     with st.spinner("Getting video information..."):
         video_info = get_video_info(url.strip())
-        
+
     if video_info:
-            st.session_state.video_info = video_info
-            formats = video_info.get('formats', [])
-            
-            # Lọc và sắp xếp formats với audio info
-            unique_formats = {}
-            for f in formats:
-                if f.get('vcodec') != 'none' and f.get('height'):
-                    height = f.get('height', 0)
-                    ext = f.get('ext', 'mp4')
-                    filesize = f.get('filesize') or 0
-                    fps = f.get('fps') or 0
-                    has_audio = f.get('acodec') != 'none'
-                    
-                    key = f"{height}p-{ext.upper()}"
-                    current_filesize = unique_formats.get(key, {}).get('filesize', 0) or 0
-                    
-                    if key not in unique_formats or filesize > current_filesize:
-                        quality_label = f"{height}p - {ext.upper()}"
-                        if fps > 0:
-                            quality_label += f" ({fps}fps)"
-                        if has_audio:
-                            quality_label += " 🔊"
-                        if filesize > 0:
-                            size_mb = filesize / (1024*1024)
-                            quality_label += f" (~{size_mb:.1f}MB)"
-                        
-                        unique_formats[key] = {
-                            'format_id': f.get('format_id'),
-                            'label': quality_label,
-                            'height': height,
-                            'ext': ext,
-                            'filesize': filesize,
-                            'has_audio': has_audio
-                        }
-            
-            # Sắp xếp: audio first, then quality, then filesize
-            video_formats = list(unique_formats.values())
-            video_formats.sort(key=lambda x: (x['has_audio'], x['height'], x['filesize']), reverse=True)
-            st.session_state.formats = video_formats
+        st.session_state.video_info = video_info
+        formats = video_info.get('formats', [])
+
+        # CHỈ lấy formats có audio - đơn giản và chất lượng tốt
+        audio_formats = {}
+        for f in formats:
+            # ĐIỀU KIỆN: phải có video + audio + resolution
+            if (f.get('vcodec') != 'none' and 
+                f.get('acodec') != 'none' and 
+                f.get('height')):
+                
+                height = f.get('height', 0)
+                ext = f.get('ext', 'mp4')
+                filesize = f.get('filesize') or 0
+                fps = f.get('fps') or 0
+                format_id = f.get('format_id', '')
+
+                key = f"{height}p-{ext.upper()}"
+                current_filesize = audio_formats.get(key, {}).get('filesize', 0) or 0
+
+                # Chỉ giữ format có file size lớn nhất (chất lượng cao hơn)
+                if key not in audio_formats or filesize > current_filesize:
+                    quality_label = f"{height}p - {ext.upper()}"
+                    if fps > 0: quality_label += f" ({fps}fps)"
+                    quality_label += " 🔊"  # Luôn có audio
+                    if filesize > 0:
+                        size_mb = filesize / (1024*1024)
+                        quality_label += f" (~{size_mb:.1f}MB)"
+
+                    audio_formats[key] = {
+                        'format_id': format_id,
+                        'label': quality_label,
+                        'height': height,
+                        'ext': ext,
+                        'filesize': filesize,
+                        'has_audio': True  # Luôn True vì đã filter
+                    }
+
+        video_formats = list(audio_formats.values())
+        # Sort theo resolution cao nhất trước
+        video_formats.sort(key=lambda x: (x['height'], x['filesize']), reverse=True)
+        st.session_state.formats = video_formats
 
 # ===================== RETRY SECTION =====================
 if url and url.strip() and not st.session_state.video_info:
     st.markdown("---")
     col1, col2, col3 = st.columns([1, 2, 1])
     with col2:
-        st.warning("⚠️ Failed to load video information. This might be due to Facebook's anti-bot protection or temporary server issues.")
-        
+        st.warning("⚠️ Failed to load video information. This might be due to platform's anti-bot protection or temporary server issues.")
         col_retry1, col_retry2 = st.columns(2)
         with col_retry1:
             if st.button("🔄 Retry Loading", use_container_width=True):
-                # Clear current URL to force reload
                 st.session_state.current_url = ""
                 st.rerun()
-        
         with col_retry2:
             if st.button("🗑️ Clear & Start Over", use_container_width=True):
-                # Reset all session state
                 for key in list(st.session_state.keys()):
                     if key.startswith(('video_info', 'formats', 'download_', 'current_url')):
                         del st.session_state[key]
@@ -336,20 +337,19 @@ if url and url.strip() and not st.session_state.video_info:
 # ===================== UI PREVIEW & OPTIONS =====================
 if st.session_state.video_info:
     info = st.session_state.video_info
-    
-    # Hiển thị trạng thái tại đây
+
     status_placeholder = st.empty()
     if st.session_state.download_completed:
         status_placeholder.success("✅ Video downloaded successfully!")
     else:
         status_placeholder.success("✅ Video loaded successfully!")
-    
-    # Progress area (đặt sau status để xuất hiện bên dưới)
+
+    # placeholders cho tiến trình & log
     log_area = st.empty()
     progress = st.empty()
-    
+
     col_left, col_right = st.columns([1, 1])
-    
+
     with col_left:
         if info.get('thumbnail'):
             try:
@@ -385,39 +385,29 @@ if st.session_state.video_info:
                     """, unsafe_allow_html=True)
             except:
                 st.info("No thumbnail available")
-    
+
     with col_right:
-        # Download type selection
         download_type = st.selectbox("**Type:**", ["Video + Audio", "Audio Only"], index=0)
-        
-        # Quality selection - only show for Video + Audio
+
         if download_type == "Video + Audio":
             if st.session_state.formats:
                 format_labels = [f['label'] for f in st.session_state.formats]
                 selected_idx = st.selectbox("**Quality:**", range(len(format_labels)),
                                             format_func=lambda x: format_labels[x], index=0)
                 selected_format = st.session_state.formats[selected_idx]
-                
-                # Auto-select best strategy for video + audio
                 ffmpeg_path = shutil.which("ffmpeg")
                 if selected_format['has_audio']:
                     fmt = selected_format['format_id']
                 elif ffmpeg_path:
                     fmt = f"{selected_format['format_id']}+bestaudio/best"
                 else:
-                    # Fallback to best format with audio
                     audio_formats = [f for f in st.session_state.formats if f['has_audio']]
-                    if audio_formats:
-                        fmt = audio_formats[0]['format_id']
-                    else:
-                        fmt = "best[height<=720]/best"
+                    fmt = audio_formats[0]['format_id'] if audio_formats else "best[height<=720]/best"
             else:
                 fmt = "best[height<=1080]+bestaudio/best[height<=1080]/best"
         else:
-            # Audio Only mode - no quality selection needed
             fmt = "bestaudio[ext=m4a]/bestaudio/best"
-        
-        # Description
+
         if info.get('description'):
             st.markdown("##### Description:")
             desc = info.get('description', '')
@@ -427,35 +417,26 @@ if st.session_state.video_info:
                     st.write(desc)
             else:
                 st.write(desc)
-        
-        # Video Info
+
         st.markdown("##### Video Info:")
         st.markdown(f"&nbsp;&nbsp;&nbsp;&nbsp; - Title: {info.get('title', 'N/A')}", unsafe_allow_html=True)
         st.markdown(f"&nbsp;&nbsp;&nbsp;&nbsp; - Uploader: {info.get('uploader', 'N/A')}", unsafe_allow_html=True)
         st.markdown(f"&nbsp;&nbsp;&nbsp;&nbsp; - Duration: {info.get('duration_string', 'N/A')}", unsafe_allow_html=True)
         if info.get('view_count'):
             st.markdown(f"&nbsp;&nbsp;&nbsp;&nbsp; - Views: {info.get('view_count', 0):,}", unsafe_allow_html=True)
-        
-        # FFmpeg status
         ffmpeg_available = "✅ Available" if shutil.which("ffmpeg") else "❌ Not found"
         st.markdown(f"&nbsp;&nbsp;&nbsp;&nbsp; - FFmpeg: {ffmpeg_available}", unsafe_allow_html=True)
-        
-        # Set output template based on download type
-        if download_type == "Audio Only":
-            outtmpl = "downloads/%(title).100s-%(id)s.%(ext)s"
-        else:
-            outtmpl = "downloads/%(title).80s-%(id)s.%(ext)s"
-    
+
+        outtmpl = "downloads/%(title).100s-%(id)s.%(ext)s" if download_type == "Audio Only" else "downloads/%(title).80s-%(id)s.%(ext)s"
+
     # ===================== AUTO DOWNLOAD =====================
     if not st.session_state.download_completed:
-        error_logs.clear()
+        # ĐỪNG clear log để expander không mất sau rerun
         temp_cookies = None
-        
         try:
             ensure_download_dir(outtmpl)
-            
             is_audio_only = download_type == "Audio Only"
-            
+
             ydl_opts = build_opts(
                 outtmpl=outtmpl,
                 cookies_path=temp_cookies,
@@ -481,9 +462,7 @@ if st.session_state.video_info:
                 ret = ydl.download([url.strip()])
 
             if ret == 0:
-                # Tìm file đã download
                 final_file = None
-                
                 if file_out and Path(file_out).exists():
                     final_file = file_out
                 else:
@@ -491,54 +470,41 @@ if st.session_state.video_info:
                     if downloads_dir.exists():
                         recent_files = sorted(downloads_dir.rglob("*"), key=os.path.getctime, reverse=True)
                         if is_audio_only:
-                            audio_files = [f for f in recent_files if f.is_file() and f.suffix in ['.mp3', '.m4a', '.aac']]
-                            target_files = audio_files
+                            target_files = [f for f in recent_files if f.is_file() and f.suffix in ['.mp3', '.m4a', '.aac']]
                         else:
-                            video_files = [f for f in recent_files if f.is_file() and f.suffix in ['.mp4', '.webm', '.mkv']]
-                            target_files = video_files
-                        
+                            target_files = [f for f in recent_files if f.is_file() and f.suffix in ['.mp4', '.webm', '.mkv']]
                         if target_files:
                             final_file = str(target_files[0])
-                
+
                 if final_file and Path(final_file).exists():
                     st.session_state.download_completed = True
                     st.session_state.downloaded_file = final_file
-                    # Cập nhật status và xóa log thay vì tạo thông báo mới
-                    status_placeholder.success("✅ Video loaded successfully!")
-                    log_area.empty()  # Xóa thông báo "Starting download..."
+                    status_placeholder.success("✅ Video downloaded successfully!")
                 else:
                     st.warning("❌ Download completed but file not found.")
-                    log_area.empty()  # Xóa thông báo "Starting download..." kể cả khi lỗi
             else:
                 st.error(f"❌ Download failed with return code: {ret}")
-                log_area.empty()  # Xóa thông báo "Starting download..." khi lỗi
-
-            if error_logs:
-                with st.expander("📋 Show detailed logs"):
-                    st.text("\n".join(error_logs[-20:]))
 
         except ytdlp.utils.DownloadError as e:
             st.error(f"❌ Download Error: {str(e)}")
-            log_area.empty()  # Xóa thông báo "Starting download..." khi lỗi
-            if error_logs:
-                with st.expander("Show detailed logs"):
-                    st.text("\n".join(error_logs[-20:]))
         except Exception as e:
             st.error(f"Unexpected error: {str(e)}")
-            log_area.empty()  # Xóa thông báo "Starting download..." khi lỗi
-            if error_logs:
-                with st.expander("Show detailed logs"):
-                    st.text("\n".join(error_logs[-20:]))
+
+    # ====== LOG EXPANDER: luôn render khi đã load video (vị trí ngay trên nút Download) ======
+    with st.expander("📋 Show detailed logs"):
+        if st.session_state.detailed_logs:
+            st.text("\n".join(st.session_state.detailed_logs[-20:]))
+        else:
+            st.caption("No logs yet.")
 
     # ===================== SAVE FILE BUTTON =====================
     if st.session_state.download_completed and st.session_state.downloaded_file:
-        col1, col2, col3 = st.columns([1, 2, 1])
+        col1, col2, col3 = st.columns([1, 1, 1])
         with col2:
             if Path(st.session_state.downloaded_file).exists():
                 with open(st.session_state.downloaded_file, "rb") as f:
                     file_data = f.read()
                     file_name = Path(st.session_state.downloaded_file).name
-                    
                     st.download_button(
                         label="Download Video",
                         data=file_data,
@@ -550,22 +516,23 @@ if st.session_state.video_info:
                     )
             else:
                 st.error("Downloaded file not found!")
+        
 
 else:
-    # Hướng dẫn sử dụng với thiết kế đẹp - chiều rộng 2/3
+    # Hướng dẫn sử dụng
     col1, col2, col3 = st.columns([1, 2, 1])
     with col2:
         st.markdown("""
         <div style="
             background: rgba(255, 255, 255, 0.05);
-            color: #333;
+            color: var(--text-color);
             padding: 1.5rem;
             border-radius: 15px;
             text-align: center;
             margin: 2rem 0;
             border: 1px solid rgba(200, 200, 200, 0.2);
         ">
-        <h3 style="margin: 0 0 0.5rem 0; font-weight: 600; text-align: left;">
+        <h3 style="margin: 0 0 0.5rem 0; font-weight: 600; text-align: left; color: inherit;">
             How To Download Videos
         </h3>
         <div style="
@@ -587,9 +554,7 @@ else:
                     margin-right: 1rem;
                     font-weight: bold;
                 ">1</span>
-                <span style="font-size: 1.1rem;">
-                    Copy Facebook video or reel Url
-                </span>
+                <span style="font-size: 1.1rem; color: inherit;">Copy video URL from Facebook or YouTube</span>
             </div>
             <div style="display: flex; align-items: center; justify-content: flex-start; margin-bottom: 1rem;">
                 <span style="
@@ -604,9 +569,7 @@ else:
                     margin-right: 1rem;
                     font-weight: bold;
                 ">2</span>
-                <span style="font-size: 1.1rem;">
-                    Paste Url in the input box above
-                </span>
+                <span style="font-size: 1.1rem; color: inherit;">Paste URL in the input box above</span>
             </div>
             <div style="display: flex; align-items: center; justify-content: flex-start;">
                 <span style="
@@ -621,15 +584,12 @@ else:
                     margin-right: 1rem;
                     font-weight: bold;
                 ">3</span>
-                <span style="font-size: 1.1rem;">
-                    Press Enter to start automatic download
-                </span>
+                <span style="font-size: 1.1rem; color: inherit;">Press Enter to start automatic download</span>
             </div>
         </div>
     </div>
     """, unsafe_allow_html=True)
-        
-        # Tạo empty placeholders cho trường hợp chưa có video
+
         progress = st.empty()
         log_area = st.empty()
 
@@ -650,6 +610,6 @@ st.markdown("""
     box-shadow: none;
     backdrop-filter: none;
 ">
-    <p style="margin: 0;">Copyright © hieuvoquoc@gmail.com (V1.02)</p>
+    <p style="margin: 0;">Copyright © hieuvoquoc@gmail.com (V1.03)</p>
 </div>
 """, unsafe_allow_html=True)
