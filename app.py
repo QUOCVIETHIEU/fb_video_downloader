@@ -384,6 +384,13 @@ def download_with_fallback(video_url, output_path, format_selector="best", max_r
     import random
     import subprocess
     
+    # Chuyển đổi YouTube Shorts URL nếu cần
+    if "youtube.com/shorts/" in video_url:
+        video_id = video_url.split("/shorts/")[-1].split("?")[0]
+        original_url = video_url
+        video_url = f"https://www.youtube.com/watch?v={video_id}"
+        st.info(f"🔄 Phát hiện YouTube Shorts, chuyển đổi: {video_url}")
+    
     # Strategy 1: Mobile User-Agent (PROVEN TO WORK!)
     strategies = [
         {
@@ -510,7 +517,28 @@ def download_with_fallback(video_url, output_path, format_selector="best", max_r
             }
         },
         {
-            "name": "Generic extractor",
+            "name": "YouTube Shorts Handler",
+            "method": "ytdlp",
+            "options": {
+                "quiet": False,
+                "nocheckcertificate": True,
+                "socket_timeout": 60,
+                "http_headers": {
+                    "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 16_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.0 Mobile/15E148 Safari/604.1"
+                },
+                "format": "best[height<=720]/best",
+                "outtmpl": output_path,
+                "geo_bypass": True,
+                # Đặc biệt cho YouTube Shorts
+                "extractor_args": {
+                    "youtube": {
+                        "skip": ["dash", "hls"]
+                    }
+                }
+            }
+        },
+        {
+            "name": "Generic extractor (Last resort)",
             "method": "ytdlp",
             "options": {
                 "quiet": False,
@@ -520,7 +548,8 @@ def download_with_fallback(video_url, output_path, format_selector="best", max_r
                     "User-Agent": "curl/7.68.0"
                 },
                 "format": "best",
-                "outtmpl": output_path
+                "outtmpl": output_path,
+                "ignore_errors": True
             }
         }
     ]
@@ -553,8 +582,24 @@ def download_with_fallback(video_url, output_path, format_selector="best", max_r
                 elif "private" in error_msg.lower():
                     st.error("Video ở chế độ riêng tư")
                     return False
+                elif "Unsupported URL" in error_msg and "/shorts/" in video_url:
+                    # Try converting shorts URL to regular format
+                    if "youtube.com/shorts/" in video_url:
+                        video_id = video_url.split("/shorts/")[-1].split("?")[0]
+                        regular_url = f"https://www.youtube.com/watch?v={video_id}"
+                        st.info(f"🔄 Đang thử chuyển Shorts URL: {regular_url}")
+                        # Recursively try with regular URL
+                        return download_with_fallback(regular_url, output_path, format_selector, 1)
+                    continue
+                elif "Failed to extract" in error_msg:
+                    continue  # Try next strategy
     
+    # Nếu tất cả đều thất bại, thông báo lỗi cuối cùng
     st.error("❌ Tất cả phương pháp download đều thất bại")
+    st.error("💡 **Gợi ý giải pháp:**")
+    st.error("- Thử video Facebook thay vì YouTube")
+    st.error("- Sử dụng URL video khác")
+    st.error("- Chờ và thử lại sau 10-15 phút")
     return False
 
 def get_video_info_with_fallback(video_url, max_retries=3):
