@@ -1,12 +1,14 @@
+# app.py
 import streamlit as st
 from pathlib import Path
 import tempfile, time, os, glob
 import shutil
 from typing import Optional, Dict, Any
 
+# ===================== PAGE CONFIG =====================
 st.set_page_config(
-    page_title="FB & YouTube Video Downloader", 
-    page_icon="assets/fb_downloader.png", 
+    page_title="FB & YouTube Video Downloader",
+    page_icon="assets/fb_downloader.png",
     layout="wide",
     initial_sidebar_state="collapsed"
 )
@@ -52,17 +54,17 @@ st.markdown("""
     .stDownloadButton > button::-moz-focus-inner { border: 0 !important; }
 
     .preview-wrap {
-        height: 500px; 
-        display: flex; 
-        justify-content: center; 
-        align-items: center; 
-        border: 1px solid #402031D; 
-        border-radius: 10px; 
-        overflow: hidden; 
+        height: 500px;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        border: 1px solid #402031;
+        border-radius: 10px;
+        overflow: hidden;
         background-color: #2b2b2b;
         position: relative;
     }
-    
+
     .preview-wrap video {
         display: block !important;
         position: absolute !important;
@@ -76,7 +78,7 @@ st.markdown("""
         margin: 0 !important;
         object-fit: contain !important;
     }
-    
+
     .preview-wrap iframe {
         position: absolute !important;
         top: 50% !important;
@@ -85,7 +87,7 @@ st.markdown("""
         border: none !important;
         border-radius: 10px !important;
     }
-    
+
     .preview-wrap img {
         max-width: 95%;
         max-height: 95%;
@@ -95,34 +97,26 @@ st.markdown("""
         left: 50%;
         transform: translate(-50%, -50%);
     }
-    
+
     input::placeholder { font-style: italic; color: #999; }
-    
+
     .spinner {
         display: inline-block;
-        width: 16px;
-        height: 16px;
+        width: 16px; height: 16px;
         border: 2px solid #f3f3f3;
         border-top: 2px solid #3498db;
         border-radius: 50%;
         animation: spin 1s linear infinite;
-        margin-right: 8px;
-        vertical-align: middle;
+        margin-right: 8px; vertical-align: middle;
     }
-    
-    @keyframes spin {
-        0% { transform: rotate(0deg); }
-        100% { transform: rotate(360deg); }
-    }
-    
+    @keyframes spin { 0% { transform: rotate(0deg);} 100% { transform: rotate(360deg);} }
+
     .stButton > button[kind="primary"] {
         background: linear-gradient(0deg, #25A0FA 0%, #25A0FA 100%) !important;
         color: white !important;
         border: none !important;
     }
-    .stButton > button[kind="primary"]:hover {
-        filter: brightness(1.1) !important;
-    }
+    .stButton > button[kind="primary"]:hover { filter: brightness(1.1) !important; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -163,6 +157,12 @@ except Exception:
     st.error("Missing dependency `yt-dlp`. Please install with `pip install -r requirements.txt` and rerun.")
     st.stop()
 
+# ===================== NETWORK / YT TUNING =====================
+FORCE_IPV4 = True
+YOUTUBE_CLIENTS = ["android", "web"]   # Ưu tiên android để tránh 403
+GEO_BYPASS_COUNTRY = "VN"
+ADD_REFERER_HEADERS = True
+
 # ===================== HELPERS =====================
 def cleanup_temp_files():
     for temp_file in st.session_state.temp_files:
@@ -182,25 +182,42 @@ def ensure_download_dir(path_tmpl: str):
     else:
         Path(path_tmpl).parent.mkdir(parents=True, exist_ok=True)
 
-def get_video_info(video_url, max_retries=3):
+def get_video_info(video_url, max_retries=3, cookies_path=None, proxy=None):
     for attempt in range(max_retries):
         try:
-            headers = {
+            http_headers = {
                 "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36",
-                "Accept-Language": "en-US,en;q=0.9"
+                "Accept-Language": "en-US,en;q=0.9",
             }
-            if 'facebook.com' in video_url:
-                headers['Referer'] = 'https://www.facebook.com/'
-            elif 'youtube.com' in video_url or 'youtu.be' in video_url:
-                headers['Referer'] = 'https://www.youtube.com/'
-            
+            if ADD_REFERER_HEADERS:
+                http_headers.update({
+                    "Referer": "https://www.youtube.com/",
+                    "Origin": "https://www.youtube.com",
+                })
+
             ydl_opts = {
                 "quiet": True,
                 "no_warnings": True,
                 "nocheckcertificate": True,
                 "listformats": True,
-                "http_headers": headers
+                "http_headers": http_headers,
+                "extractor_args": {
+                    "youtube": {
+                        "player_client": YOUTUBE_CLIENTS,   # ["android","web"]
+                        "player_skip": ["configs"],
+                    }
+                },
+                "geo_bypass": True,
+                "geo_bypass_country": GEO_BYPASS_COUNTRY,
+                "noplaylist": True,
             }
+            if FORCE_IPV4:
+                ydl_opts["forceipv4"] = True
+            if cookies_path:
+                ydl_opts["cookiefile"] = cookies_path
+            if proxy:
+                ydl_opts["proxy"] = proxy
+
             with ytdlp.YoutubeDL(ydl_opts) as ydl:
                 info = ydl.extract_info(video_url, download=False)
                 return info
@@ -208,23 +225,11 @@ def get_video_info(video_url, max_retries=3):
             error_msg = str(e)
             if "Cannot parse data" in error_msg and attempt < max_retries - 1:
                 st.warning(f"⚠️ Attempt {attempt + 1} failed. Retrying... ({attempt + 2}/{max_retries})")
-                time.sleep(2)
+                time.sleep(1.2)
                 continue
-            elif "Cannot parse data" in error_msg:
-                st.error("❌ Website changed their page structure or the video is unavailable. Please try again later or use a different video URL.")
-                with st.expander("🔧 Troubleshooting Tips"):
-                    st.markdown("""
-                    - **Refresh the page** and try again
-                    - **Copy the URL again** from Facebook or YouTube
-                    - **Try a different video** to test if the issue is specific
-                    - **Wait a few minutes** - Some websites temporarily block requests
-                    - **Check if the video is public** - Private/restricted videos cannot be downloaded
-                    - **For YouTube Shorts**: Use the full URL, not the mobile short link
-                    - **Consider using a VPN/Proxy** if access is geo-restricted (advanced users)
-                    """)
             else:
                 st.error(f"❌ Failed to get video info: {error_msg}")
-            return None
+                return None
     return None
 
 def build_opts(
@@ -236,19 +241,18 @@ def build_opts(
     retries: int,
     proxy: Optional[str],
     no_check_certificate: bool = False,
-    is_audio_only: bool = False,
-    video_url: str = "" # Thêm tham số video_url
+    is_audio_only: bool = False
 ) -> Dict[str, Any]:
     ffmpeg_path = shutil.which("ffmpeg")
-    
-    headers = {
+    http_headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36",
-        "Accept-Language": "en-US,en;q=0.9"
+        "Accept-Language": "en-US,en;q=0.9",
     }
-    if 'facebook.com' in video_url:
-        headers['Referer'] = 'https://www.facebook.com/'
-    elif 'youtube.com' in video_url or 'youtu.be' in video_url:
-        headers['Referer'] = 'https://www.youtube.com/'
+    if ADD_REFERER_HEADERS:
+        http_headers.update({
+            "Referer": "https://www.youtube.com/",
+            "Origin": "https://www.youtube.com",
+        })
 
     opts: Dict[str, Any] = {
         "outtmpl": outtmpl,
@@ -257,17 +261,34 @@ def build_opts(
         "noprogress": False,
         "consoletitle": False,
         "nocheckcertificate": no_check_certificate,
-        "source_address": None,
         "retries": retries,
         "fragment_retries": retries,
         "continuedl": True,
         "concurrent_fragment_downloads": concurrent_fragments or 1,
         "ratelimit": None,
-        "http_headers": headers, # Sử dụng headers đã được tạo
+        "http_headers": http_headers,
         "format": fmt,
         "quiet": False,
         "no_warnings": False,
+
+        # YouTube hardening
+        "extractor_args": {
+            "youtube": {
+                "player_client": YOUTUBE_CLIENTS,
+            }
+        },
+        "geo_bypass": True,
+        "geo_bypass_country": GEO_BYPASS_COUNTRY,
+        "noplaylist": True,
+
+        # dịu throttle
+        "sleep_interval_requests": 0.5,
+        "max_sleep_interval_requests": 1.5,
     }
+
+    if FORCE_IPV4:
+        opts["forceipv4"] = True
+
     if ffmpeg_path:
         opts["ffmpeg_location"] = ffmpeg_path
 
@@ -291,51 +312,63 @@ def build_opts(
             }]
             opts["merge_output_format"] = "mp4"
 
-    if rate_limit: opts["ratelimit"] = rate_limit
-    if cookies_path: opts["cookiefile"] = cookies_path
-    if proxy: opts["proxy"] = proxy
+    if rate_limit:
+        opts["ratelimit"] = rate_limit
+    if cookies_path:
+        opts["cookiefile"] = cookies_path
+    if proxy:
+        opts["proxy"] = proxy
+
     return opts
 
 # ===================== DEFAULTS =====================
 rate_limit = None
 retries = 10
 concurrent_frags = 1
-proxy = None
 no_check_cert = True
 
 # ===================== INPUT URL =====================
 st.markdown("### Enter Video URL")
 
-# Use form for better handling of input + button together
+# Form input + GO
 with st.form("url_form", clear_on_submit=False):
     col_input, col_button = st.columns([15, 1])
-    
     with col_input:
         url_input = st.text_input(
-            "Facebook or YouTube video Url:", 
-            placeholder="https://www.facebook.com/reel/...",
-            help="Paste your Facebook video/reel or YouTube video/shorts URL here",
+            "Facebook or YouTube video Url:",
+            placeholder="https://www.facebook.com/reel/...  hoặc  https://www.youtube.com/watch?v=...",
+            help="Paste your Facebook video/reel hoặc YouTube video/shorts URL",
             key="url_input_form",
         )
-    
     with col_button:
-        # Add some spacing to align with input
         st.markdown("<br>", unsafe_allow_html=True)
         go_submitted = st.form_submit_button("GO", use_container_width=True, type="primary")
 
-# Handle URL - form ensures both input and button work together
+# Optional: Cookies & Proxy
+with st.expander("🔐 Optional: Cookies & Proxy"):
+    cookie_file = st.file_uploader("Upload cookies.txt (Netscape format)", type=["txt"])
+    proxy_input = st.text_input("HTTP/HTTPS Proxy (ví dụ: http://user:pass@host:port)", value="")
+    use_proxy = bool(proxy_input.strip())
+
+# Lưu cookies tạm (nếu có)
+temp_cookies = None
+if cookie_file is not None:
+    tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".txt")
+    tmp.write(cookie_file.read())
+    tmp.flush(); tmp.close()
+    temp_cookies = tmp.name
+
+# Resolve URL
 url = ""
 if go_submitted and url_input.strip():
     url = url_input.strip()
 elif url_input and url_input.strip():
     url = url_input.strip()
 
-# Dùng logs trong session để không mất khi rerun
+# Logs
 error_logs = st.session_state.detailed_logs
 last_percent = 0
 file_out = None
-
-# Variables for progress tracking
 
 # ===================== GET INFO khi URL đổi =====================
 if url and url.strip() and url.strip() != st.session_state.current_url:
@@ -345,28 +378,30 @@ if url and url.strip() and url.strip() != st.session_state.current_url:
     st.session_state.current_url = url.strip()
     st.session_state.detailed_logs.clear()
     with st.spinner("Getting video information..."):
-        video_info = get_video_info(url.strip())
+        video_info = get_video_info(
+            url.strip(),
+            cookies_path=temp_cookies,
+            proxy=proxy_input if use_proxy else None
+        )
     if video_info:
         st.session_state.video_info = video_info
         formats = video_info.get('formats', [])
         unique_formats = {}
         for f in formats:
-            if f.get('vcodec') != 'none' and f.get('height'):
-                height = f.get('height', 0)
+            # Chỉ lọc vcodec có video, nhưng KHÔNG giới hạn MP4 (tránh bó hẹp -> 403)
+            if f.get('vcodec') != 'none' and (f.get('height') or f.get('quality') is not None):
+                height = f.get('height') or 0
                 ext = f.get('ext', 'mp4')
-                # Only include MP4 formats in Quality dropdown
-                if ext.lower() != 'mp4':
-                    continue
-                filesize = f.get('filesize') or 0
+                filesize = f.get('filesize') or f.get('filesize_approx') or 0
                 fps = f.get('fps') or 0
                 has_audio = f.get('acodec') != 'none'
-                key = f"{height}p-{ext.upper()}"
+                key = f"{height or 'NA'}p-{ext.upper()}"
                 current_filesize = unique_formats.get(key, {}).get('filesize', 0) or 0
                 if key not in unique_formats or filesize > current_filesize:
-                    quality_label = f"{height}p - {ext.upper()}"
-                    if fps > 0: quality_label += f" ({fps}fps)"
+                    quality_label = f"{height}p - {ext.upper()}" if height else f"{ext.upper()}"
+                    if fps: quality_label += f" ({fps}fps)"
                     if has_audio: quality_label += " 🔊"
-                    if filesize > 0:
+                    if filesize and isinstance(filesize, (int, float)):
                         size_mb = filesize / (1024*1024)
                         quality_label += f" (~{size_mb:.1f}MB)"
                     unique_formats[key] = {
@@ -378,7 +413,7 @@ if url and url.strip() and url.strip() != st.session_state.current_url:
                         'has_audio': has_audio
                     }
         video_formats = list(unique_formats.values())
-        video_formats.sort(key=lambda x: (x['has_audio'], x['height'], x['filesize']), reverse=True)
+        video_formats.sort(key=lambda x: (x['has_audio'], x['height'] or 0, x['filesize'] or 0), reverse=True)
         st.session_state.formats = video_formats
 
 # ===================== RETRY SECTION =====================
@@ -386,7 +421,7 @@ if url and url.strip() and not st.session_state.video_info:
     st.markdown("---")
     col1, col2, col3 = st.columns([1, 2, 1])
     with col2:
-        st.warning("⚠️ Failed to load video information. This might be due to website's anti-bot protection, temporary server issues, or the video might be private/restricted.")
+        st.warning("⚠️ Failed to load video information. Website có thể đang chặn/throttle, hoặc video private/restricted.")
         col_retry1, col_retry2 = st.columns(2)
         with col_retry1:
             if st.button("🔄 Retry Loading", use_container_width=True):
@@ -419,48 +454,32 @@ if st.session_state.video_info:
     log_area = st.empty()
     progress = st.empty()
 
-    # Extract YouTube video ID for embedding
+    # Extract YouTube ID (để embed preview)
     def extract_youtube_id(url, video_info=None):
-        """Extract YouTube video ID from various URL formats"""
         import re
-        
-        # Try to get from video_info first
         if video_info and video_info.get('id'):
             return video_info.get('id')
-        
-        # Pattern matching for different YouTube URL formats
         patterns = [
             r'(?:youtube\.com\/watch\?v=|youtu\.be\/|youtube\.com\/embed\/|youtube\.com\/shorts\/)([a-zA-Z0-9_-]{11})',
             r'youtube\.com\/.*[?&]v=([a-zA-Z0-9_-]{11})',
         ]
-        
         for pattern in patterns:
-            match = re.search(pattern, url)
-            if match:
-                return match.group(1)
-        
+            m = re.search(pattern, url)
+            if m: return m.group(1)
         return None
 
     col_left, col_right = st.columns([2, 3])
 
     with col_left:
-        # Use st.empty() to ensure single preview in left column
         preview_area = st.empty()
-        
         if info.get('thumbnail'):
             try:
-                # Check if this is a YouTube URL
                 is_youtube = 'youtu' in url or 'youtube.com' in url or 'youtu.be' in url
-                
                 if is_youtube:
-                    # For YouTube: Use iframe embed
                     youtube_id = extract_youtube_id(url, info)
                     if youtube_id:
-                        # Check if it's a YouTube Short by URL or video info
                         is_short = '/shorts/' in url or '/shorts/' in info.get('webpage_url', '')
-                        
                         if is_short:
-                            # YouTube Shorts embed (portrait orientation)
                             preview_area.markdown(f"""
                             <div class="preview-wrap">
                                 <iframe 
@@ -476,7 +495,6 @@ if st.session_state.video_info:
                             <p style="text-align:center; color:#ccc; font-size:0.9em; margin-top:6px;">YouTube Shorts Preview</p>
                             """, unsafe_allow_html=True)
                         else:
-                            # Regular YouTube video embed (landscape)
                             preview_area.markdown(f"""
                             <div class="preview-wrap">
                                 <iframe 
@@ -492,7 +510,6 @@ if st.session_state.video_info:
                             <p style="text-align:center; color:#ccc; font-size:0.9em; margin-top:6px;">YouTube Video Preview</p>
                             """, unsafe_allow_html=True)
                     else:
-                        # Fallback to thumbnail if can't extract ID
                         preview_area.markdown(f"""
                         <div class="preview-wrap">
                             <img src="{info.get('thumbnail','')}" />
@@ -503,24 +520,18 @@ if st.session_state.video_info:
                         <p style="text-align:center; color:#ccc; font-size:0.9em; margin-top:6px;">YouTube Thumbnail</p>
                         """, unsafe_allow_html=True)
                 else:
-                    # For Facebook: Try to show video preview
                     preview_url = None
                     if info.get('formats'):
                         video_formats_all = [f for f in info.get('formats', []) if f.get('vcodec') != 'none' and f.get('url')]
                         if video_formats_all:
                             video_formats_all.sort(key=lambda x: x.get('height', 0) or 0)
                             preview_url = video_formats_all[0].get('url')
-                    
+
                     if preview_url:
                         preview_area.markdown(f"""
                         <div class="preview-wrap">
-                            <video 
-                                controls 
-                                controlslist="nodownload" 
-                                oncontextmenu="return false;" 
-                                poster="{info.get('thumbnail', '')}"
-                                preload="metadata"
-                            >
+                            <video controls controlslist="nodownload" oncontextmenu="return false;"
+                                   poster="{info.get('thumbnail', '')}" preload="metadata">
                                 <source src="{preview_url}" type="video/mp4">
                                 <p style="color:#ccc;">Your browser does not support the video tag.</p>
                             </video>
@@ -542,7 +553,7 @@ if st.session_state.video_info:
         else:
             preview_area.info("No thumbnail available")
 
-    # Generate custom filename based on platform and video type
+    # Generate custom filename
     def generate_custom_filename(url, video_info, is_audio, selected_format=None):
         video_id = video_info.get('id', 'unknown')
         if is_audio:
@@ -563,19 +574,14 @@ if st.session_state.video_info:
                 filename = f"fb_video_{video_id}{quality_suffix}" + ("" if is_audio else f".{ext}")
         elif 'youtu' in url or 'youtube.com' in url or 'youtu.be' in url:
             is_short = False
-            # Check for YouTube Shorts
-            if '/shorts/' in url or 'youtube.com/shorts/' in video_info.get('webpage_url', '') or '/shorts/' in video_info.get('webpage_url', ''):
+            if '/shorts/' in url or 'youtube.com/shorts/' in info.get('webpage_url', '') or '/shorts/' in info.get('webpage_url', ''):
                 is_short = True
-            # Also check by duration and aspect ratio for auto-detection
             duration = video_info.get('duration', 0)
             if not is_short and duration and duration <= 60:
-                formats = video_info.get('formats', [])
-                for fmt in formats:
-                    h = fmt.get('height', 0)
-                    w = fmt.get('width', 0)
-                    if h and w and h > w:  # Portrait orientation suggests Shorts
-                        is_short = True
-                        break
+                for fmt in video_info.get('formats', []):
+                    h = fmt.get('height', 0); w = fmt.get('width', 0)
+                    if h and w and h > w:
+                        is_short = True; break
             prefix = "ytb_short_" if is_short else "ytb_video_"
             filename = f"{prefix}{video_id}{quality_suffix}" + ("" if is_audio else f".{ext}")
         else:
@@ -587,21 +593,21 @@ if st.session_state.video_info:
         return temp_file
 
     with col_right:
-        # ======================= TYPE SELECT =======================
-        new_download_type = st.selectbox("**Type:**", ["Video", "Audio"], index=(0 if st.session_state.last_download_type=="Video" else 1), key="download_type_selector")
+        # TYPE
+        new_download_type = st.selectbox("**Type:**", ["Video", "Audio"],
+                                         index=(0 if st.session_state.last_download_type=="Video" else 1),
+                                         key="download_type_selector")
         if st.session_state.last_download_type != new_download_type:
             st.session_state.download_completed = False
             st.session_state.downloaded_file = None
             st.session_state.last_download_type = new_download_type
             cleanup_temp_files()
             st.rerun()
-
         download_type = new_download_type
 
-        # ======================= QUALITY SELECT & FORMAT RESOLVE =======================
+        # QUALITY
         current_selected_format_id = None
         selected_format = None
-
         if download_type == "Video":
             if st.session_state.formats:
                 format_labels = [f['label'] for f in st.session_state.formats]
@@ -625,11 +631,11 @@ if st.session_state.video_info:
                     fmt = audio_formats[0]['format_id'] if audio_formats else "best[height<=720]/best"
             else:
                 fmt = "best[height<=1080]+bestaudio/best[height<=1080]/best"
-        else:  # Audio
+        else:
             if st.session_state.formats:
                 video_with_audio = [f for f in st.session_state.formats if f['has_audio']]
                 if video_with_audio:
-                    best_video_audio = max(video_with_audio, key=lambda x: x.get('height', 0))
+                    best_video_audio = max(video_with_audio, key=lambda x: x.get('height', 0) or 0)
                     fmt = best_video_audio['format_id']
                     current_selected_format_id = f"audio_from_{best_video_audio['format_id']}"
                 else:
@@ -639,12 +645,10 @@ if st.session_state.video_info:
                 fmt = "best+bestaudio/bestaudio/best"
                 current_selected_format_id = "audio_from_best"
 
-        # ======================= CHỐT TRÁNH DOUBLE PREVIEW =======================
-        # Lần đầu: chỉ set state, KHÔNG rerun
+        # TRÁNH DOUBLE PREVIEW
         if st.session_state.last_selected_format_id is None:
             st.session_state.last_selected_format_id = current_selected_format_id
         else:
-            # Các lần sau: user đổi chất lượng => rerun để reset tiến trình
             if st.session_state.last_selected_format_id != current_selected_format_id:
                 st.session_state.download_completed = False
                 st.session_state.downloaded_file = None
@@ -652,31 +656,9 @@ if st.session_state.video_info:
                 cleanup_temp_files()
                 st.rerun()
 
-        # ======================= INFO BOX =======================
+        # INFO BOX
         outtmpl = generate_custom_filename(url, info, download_type == "Audio", selected_format)
         filename_preview = os.path.basename(outtmpl)
-
-        if info.get('description'):
-            st.markdown("##### Description:")
-            desc = info.get('description', '')
-            if len(desc) > 350:
-                if 'show_full_desc' not in st.session_state:
-                    st.session_state.show_full_desc = False
-                
-                if st.session_state.show_full_desc:
-                    st.write(desc)
-                    if st.button("ℹ️ Rút gọn", key="collapse_desc"):
-                        st.session_state.show_full_desc = False
-                        st.rerun()
-                else:
-                    st.write(desc[:350] + "...")
-                    if st.button("📖 Xem thêm", key="expand_desc"):
-                        st.session_state.show_full_desc = True
-                        st.rerun()
-            else:
-                st.write(desc)
-
-        st.markdown("##### Video Info:")
         if download_type == "Audio" and not filename_preview.endswith('.mp3'):
             filename_preview += '.mp3'
         ffmpeg_available = "Available" if shutil.which("ffmpeg") else "Not found"
@@ -696,6 +678,8 @@ if st.session_state.video_info:
         else:
             clean_title = raw_title
 
+        st.caption(f"Client(s): {YOUTUBE_CLIENTS} • IPv4: {FORCE_IPV4} • Geo: {GEO_BYPASS_COUNTRY} • Cookies: {bool(temp_cookies)} • Proxy: {use_proxy}")
+
         info_items = [
             f"Title: {clean_title}",
             f"Uploader: {info.get('uploader', 'N/A')}",
@@ -707,46 +691,21 @@ if st.session_state.video_info:
             f"FFmpeg: {ffmpeg_available}",
             f"Output file: {filename_preview}",
         ])
-        
-        # Tạo chuỗi info để kiểm tra độ dài
         info_text = "\n".join([f"• {item}" for item in info_items])
-        
+
         if len(info_text) > 350:
-            if 'show_full_info' not in st.session_state:
-                st.session_state.show_full_info = False
-            
+            if 'show_full_info' not in st.session_state: st.session_state.show_full_info = False
             if st.session_state.show_full_info:
-                st.markdown(
-                    "<div style='line-height: 1.4; margin: 0.5rem 0;'>" + 
-                    info_text.replace('\n', '<br/>') + 
-                    "</div>", 
-                    unsafe_allow_html=True
-                )
-                if st.button("ℹ️ Rút gọn", key="collapse_info"):
-                    st.session_state.show_full_info = False
-                    st.rerun()
+                st.markdown("<div style='line-height:1.4; margin:0.5rem 0;'>" + info_text.replace('\n','<br/>') + "</div>", unsafe_allow_html=True)
+                if st.button("ℹ️ Rút gọn", key="collapse_info"): st.session_state.show_full_info=False; st.rerun()
             else:
-                info_short = info_text[:350] + "..."
-                st.markdown(
-                    "<div style='line-height: 1.4; margin: 0.5rem 0;'>" + 
-                    info_short.replace('\n', '<br/>') + 
-                    "</div>", 
-                    unsafe_allow_html=True
-                )
-                if st.button("📖 Xem thêm", key="expand_info"):
-                    st.session_state.show_full_info = True
-                    st.rerun()
+                st.markdown("<div style='line-height:1.4; margin:0.5rem 0;'>" + (info_text[:350]+"...").replace('\n','<br/>') + "</div>", unsafe_allow_html=True)
+                if st.button("📖 Xem thêm", key="expand_info"): st.session_state.show_full_info=True; st.rerun()
         else:
-            st.markdown(
-                "<div style='line-height: 1.4; margin: 0.5rem 0;'>" + 
-                "<br/>".join([f"&nbsp;&nbsp;&nbsp;&nbsp;• {item}" for item in info_items]) + 
-                "</div>", 
-                unsafe_allow_html=True
-            )
+            st.markdown("<div style='line-height:1.4; margin:0.5rem 0;'>" + "<br/>".join([f"&nbsp;&nbsp;&nbsp;&nbsp;• {item}" for item in info_items]) + "</div>", unsafe_allow_html=True)
 
     # ===================== PROGRESS HOOK =====================
     def progress_hook(d):
-        nonlocal_vars = {}
         try:
             if d.get("status") == "downloading":
                 total = d.get("total_bytes") or d.get("total_bytes_estimate") or 0
@@ -756,8 +715,7 @@ if st.session_state.video_info:
                 if percent != last_percent:
                     progress.progress(min(percent, 100), text=f"Downloading... {percent}%")
                     last_percent = percent
-                spd = d.get("speed")
-                eta = d.get("eta")
+                spd = d.get("speed"); eta = d.get("eta")
                 status_text = f"{percent}% | {(spd and f'{spd/1024/1024:.2f} MB/s') or '–'} | ETA: {eta or '–'} s"
                 log_area.info(status_text)
                 error_logs.append(f"PROGRESS: {status_text}")
@@ -776,7 +734,6 @@ if st.session_state.video_info:
 
     # ===================== AUTO DOWNLOAD =====================
     if not st.session_state.download_completed:
-        temp_cookies = None
         try:
             ensure_download_dir(outtmpl)
             is_audio_only = (download_type == "Audio")
@@ -787,10 +744,9 @@ if st.session_state.video_info:
                 rate_limit=rate_limit or None,
                 concurrent_fragments=int(concurrent_frags),
                 retries=int(retries),
-                proxy=proxy or None,
+                proxy=proxy_input if use_proxy else None,
                 no_check_certificate=bool(no_check_cert),
-                is_audio_only=is_audio_only,
-                video_url=url # Thêm dòng này
+                is_audio_only=is_audio_only
             )
             ydl_opts["progress_hooks"] = [progress_hook]
 
@@ -812,8 +768,7 @@ if st.session_state.video_info:
                 else:
                     for temp_file in st.session_state.temp_files:
                         if Path(temp_file).exists():
-                            final_file = temp_file
-                            break
+                            final_file = temp_file; break
                     if not final_file and is_audio_only:
                         temp_dir = tempfile.gettempdir()
                         mp3_files = glob.glob(os.path.join(temp_dir, "*.mp3"))
@@ -847,8 +802,7 @@ if st.session_state.video_info:
                         status_placeholder.success("✅ Audio converted and ready to download!")
                     else:
                         status_placeholder.success("✅ Video downloaded successfully!")
-                    progress.empty()
-                    log_area.empty()
+                    progress.empty(); log_area.empty()
                 else:
                     st.warning("❌ Download completed but file not found.")
                     st.error("Debug info:")
@@ -865,17 +819,14 @@ if st.session_state.video_info:
                     st.write(f"Recent temp files: {recent_files}")
             else:
                 st.error(f"❌ Download failed with return code: {ret}")
-                progress.empty()
-                log_area.empty()
+                progress.empty(); log_area.empty()
 
         except ytdlp.utils.DownloadError as e:
             st.error(f"❌ Download Error: {str(e)}")
-            progress.empty()
-            log_area.empty()
+            progress.empty(); log_area.empty()
         except Exception as e:
             st.error(f"Unexpected error: {str(e)}")
-            progress.empty()
-            log_area.empty()
+            progress.empty(); log_area.empty()
 
     # ====== LOG EXPANDER ======
     with st.expander("📋 Show detailed logs"):
@@ -942,46 +893,22 @@ else:
             <div style="text-align: left;">
                 <div style="display: flex; align-items: center; margin-bottom: 1rem;">
                     <span style="
-                        background: #28a745;
-                        color: white;
-                        width: 30px;
-                        height: 30px;
-                        border-radius: 50%;
-                        display: flex;
-                        align-items: center;
-                        justify-content: center;
-                        margin-right: 1rem;
-                        font-weight: bold;
+                        background: #28a745; color: white; width: 30px; height: 30px; border-radius: 50%;
+                        display: flex; align-items: center; justify-content: center; margin-right: 1rem; font-weight: bold;
                     ">1</span>
                     <span style="font-size: 1.1rem; color: inherit;">Copy Facebook or YouTube video</span>
                 </div>
                 <div style="display: flex; align-items: center; margin-bottom: 1rem;">
                     <span style="
-                        background: #007bff;
-                        color: white;
-                        width: 30px;
-                        height: 30px;
-                        border-radius: 50%;
-                        display: flex;
-                        align-items: center;
-                        justify-content: center;
-                        margin-right: 1rem;
-                        font-weight: bold;
+                        background: #007bff; color: white; width: 30px; height: 30px; border-radius: 50%;
+                        display: flex; align-items: center; justify-content: center; margin-right: 1rem; font-weight: bold;
                     ">2</span>
                     <span style="font-size: 1.1rem; color: inherit;">Paste Url in the input box above</span>
                 </div>
                 <div style="display: flex; align-items: center;">
                     <span style="
-                        background: #FFC107;
-                        color: #333;
-                        width: 30px;
-                        height: 30px;
-                        border-radius: 50%;
-                        display: flex;
-                        align-items: center;
-                        justify-content: center;
-                        margin-right: 1rem;
-                        font-weight: bold;
+                        background: #FFC107; color: #333; width: 30px; height: 30px; border-radius: 50%;
+                        display: flex; align-items: center; justify-content: center; margin-right: 1rem; font-weight: bold;
                     ">3</span>
                     <span style="font-size: 1.1rem; color: inherit;">Press Enter to start download video</span>
                 </div>
@@ -996,20 +923,10 @@ else:
 # ===================== FOOTER =====================
 st.markdown("""
 <div style="
-    position: fixed;
-    bottom: 0;
-    left: 0;
-    right: 0;
-    background: #f9f9f9;
-    border-top: 1px solid #e0e0e0;
-    text-align: center;
-    padding: 10px 0;
-    color: #666;
-    font-size: 0.85em;
-    z-index: 1000;
-    box-shadow: none;
-    backdrop-filter: none;
+    position: fixed; bottom: 0; left: 0; right: 0; background: #f9f9f9;
+    border-top: 1px solid #e0e0e0; text-align: center; padding: 10px 0;
+    color: #666; font-size: 0.85em; z-index: 1000; box-shadow: none; backdrop-filter: none;
 ">
-    <p style="margin: 0;">Copyright © hieuvoquoc@gmail.com (V1.05 - FB & YouTube Support)</p>
+    <p style="margin: 0;">Copyright © hieuvoquoc@gmail.com (V1.06 - IPv4+AndroidClient+Cookies/Proxy)</p>
 </div>
 """, unsafe_allow_html=True)
