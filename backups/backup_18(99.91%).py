@@ -5,7 +5,7 @@ import shutil
 from typing import Optional, Dict, Any
 
 st.set_page_config(
-    page_title="FB & YouTube Video Downloader", 
+    page_title="FB Video Downloader", 
     page_icon="assets/fb_downloader.png", 
     layout="wide",
     initial_sidebar_state="collapsed"
@@ -68,8 +68,8 @@ st.markdown("""
 # ===================== HEADER =====================
 st.markdown("""
 <div class="main-header">
-    <h1>FB & YouTube Video Downloader</h1>
-    <p>Fast and secure Facebook & YouTube video downloader</p>
+    <h1>FB Video Downloader</h1>
+    <p>Fast and secure Facebook video downloader</p>
 </div>
 """, unsafe_allow_html=True)
 
@@ -144,15 +144,13 @@ def get_video_info(video_url, max_retries=3):
                 time.sleep(2)
                 continue
             elif "Cannot parse data" in error_msg:
-                st.error("❌ Website changed their page structure or the video is unavailable. Please try again later or use a different video URL.")
+                st.error("❌ Facebook changed their page structure. Please try again later or use a different video URL.")
                 with st.expander("🔧 Troubleshooting Tips"):
                     st.markdown("""
                     - **Refresh the page** and try again
-                    - **Copy the URL again** from Facebook or YouTube
+                    - **Copy the URL again** from Facebook
                     - **Try a different video** to test if the issue is specific
-                    - **Wait a few minutes** - Some websites temporarily block requests
-                    - **Check if the video is public** - Private/restricted videos cannot be downloaded
-                    - **For YouTube Shorts**: Use the full URL, not the mobile short link
+                    - **Wait a few minutes** - Facebook sometimes blocks requests temporarily
                     """)
             else:
                 st.error(f"❌ Failed to get video info: {error_msg}")
@@ -230,9 +228,9 @@ no_check_cert = True
 # ===================== INPUT URL =====================
 st.markdown("### Enter Video URL")
 url = st.text_input(
-    "🎥 Facebook or YouTube video Url:", 
-    placeholder="https://www.facebook.com/reel/... or https://youtube.com/watch?v=...", 
-    help="Paste your Facebook video/reel or YouTube video/shorts URL here and press Enter",
+    "ⓕ Facebook video Url:", 
+    placeholder="https://www.facebook.com/reel/...", 
+    help="Paste your Facebook video or reel URL here and press Enter",
     key="url_input",
 )
 
@@ -289,7 +287,7 @@ if url and url.strip() and not st.session_state.video_info:
     st.markdown("---")
     col1, col2, col3 = st.columns([1, 2, 1])
     with col2:
-        st.warning("⚠️ Failed to load video information. This might be due to website's anti-bot protection, temporary server issues, or the video might be private/restricted.")
+        st.warning("⚠️ Failed to load video information. This might be due to Facebook's anti-bot protection or temporary server issues.")
         col_retry1, col_retry2 = st.columns(2)
         with col_retry1:
             if st.button("🔄 Retry Loading", use_container_width=True):
@@ -386,19 +384,17 @@ if st.session_state.video_info:
                 filename = f"fb_reel_{video_id}{quality_suffix}" + ("" if is_audio else f".{ext}")
             else:
                 filename = f"fb_video_{video_id}{quality_suffix}" + ("" if is_audio else f".{ext}")
-        elif 'youtu' in url or 'youtube.com' in url or 'youtu.be' in url:
+        elif 'youtu' in url or 'youtube.com' in url:
             is_short = False
-            # Check for YouTube Shorts
-            if '/shorts/' in url or 'youtube.com/shorts/' in video_info.get('webpage_url', '') or '/shorts/' in video_info.get('webpage_url', ''):
+            if '/shorts/' in url or 'youtube.com/shorts/' in video_info.get('webpage_url', ''):
                 is_short = True
-            # Also check by duration and aspect ratio for auto-detection
             duration = video_info.get('duration', 0)
             if not is_short and duration and duration <= 60:
                 formats = video_info.get('formats', [])
                 for fmt in formats:
                     h = fmt.get('height', 0)
                     w = fmt.get('width', 0)
-                    if h and w and h > w:  # Portrait orientation suggests Shorts
+                    if h and w and h > w:
                         is_short = True
                         break
             prefix = "ytb_short_" if is_short else "ytb_video_"
@@ -774,7 +770,7 @@ else:
                     margin-right: 1rem;
                     font-weight: bold;
                 ">1</span>
-                <span style="font-size: 1.1rem; color: inherit;">Copy Facebook or YouTube video/reel/shorts Url</span>
+                <span style="font-size: 1.1rem; color: inherit;">Copy Facebook video or reel Url</span>
             </div>
             <div style="display: flex; align-items: center; justify-content: flex-start; margin-bottom: 1rem;">
                 <span style="
@@ -830,6 +826,6 @@ st.markdown("""
     box-shadow: none;
     backdrop-filter: none;
 ">
-    <p style="margin: 0;">Copyright © hieuvoquoc@gmail.com (V1.05 - FB & YouTube Support)</p>
+    <p style="margin: 0;">Copyright © hieuvoquoc@gmail.com (V1.04)</p>
 </div>
 """, unsafe_allow_html=True)
