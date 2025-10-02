@@ -1,18 +1,34 @@
-# Facebook Video Downloader (Python, yt-dlp)
+# FB & YouTube Video Downloader - Streamlit App
 
-> **Use responsibly.** Only download videos you own or have permission to save. Respect copyright, privacy, and the Facebook Terms of Service.
+> **Use responsibly.** Only download videos you own or have permission to save. Respect copyright, privacy, and platform Terms of Service.
 
-## Quick start
+## ✨ Features
+
+- Download videos from Facebook and YouTube
+- Multiple quality options (MP4 only for reliability)
+- Audio-only downloads
+- Advanced anti-detection system for cloud deployment
+- Fallback mechanisms for 403 Forbidden errors
+- Mobile-friendly interface with GO button
+- User-friendly web interface
+
+## 🚀 Quick Start
+
+### Local Installation
 1. Install Python 3.9+
-2. Create a virtual env (optional) and install deps:
+2. Create a virtual env and install dependencies:
    ```bash
    pip install -r requirements.txt
    ```
-3. Run:
+3. Run the Streamlit app:
    ```bash
-   python fb_downloader.py "<facebook_video_url>" --no-check-certificate
+   streamlit run app.py
    ```
-   Output goes to `downloads/` by default. The `--no-check-certificate` flag helps avoid SSL certificate issues.
+
+### Streamlit Cloud Deployment
+1. Push code to GitHub
+2. Deploy on [share.streamlit.io](https://share.streamlit.io)
+3. The app includes cloud-specific optimizations
 
 ## Private videos / login
 If a video needs you to be logged-in, export cookies from your browser to a `cookies.txt` file (Netscape format), then pass `--cookies cookies.txt`:
