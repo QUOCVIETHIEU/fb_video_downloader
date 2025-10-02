@@ -183,24 +183,61 @@ def ensure_download_dir(path_tmpl: str):
         Path(path_tmpl).parent.mkdir(parents=True, exist_ok=True)
 
 def get_video_info(video_url, max_retries=3):
+    # Danh sách các User-Agent khác nhau để thử
+    user_agents = [
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:109.0) Gecko/20100101 Firefox/121.0"
+    ]
+    
     for attempt in range(max_retries):
         try:
+            # Sử dụng User-Agent khác nhau cho mỗi lần thử
+            user_agent = user_agents[attempt % len(user_agents)]
+            
             ydl_opts = {
                 "quiet": True,
                 "no_warnings": True,
                 "nocheckcertificate": True,
                 "listformats": True,
+                "extractor_retries": 3,
+                "socket_timeout": 30,
+                "geo_bypass": True,
+                "geo_bypass_country": "US",
+                "sleep_interval": 1,
+                "max_sleep_interval": 3,
                 "http_headers": {
-                    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36",
-                    "Accept-Language": "en-US,en;q=0.9"
+                    "User-Agent": user_agent,
+                    "Accept-Language": "en-US,en;q=0.9",
+                    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+                    "Accept-Encoding": "gzip, deflate",
+                    "Connection": "keep-alive",
+                    "Upgrade-Insecure-Requests": "1",
+                    "Sec-Fetch-Dest": "document",
+                    "Sec-Fetch-Mode": "navigate",
+                    "Sec-Fetch-Site": "none"
                 }
             }
+            
+            # Thêm tùy chọn đặc biệt cho YouTube khi deploy
+            if "youtube.com" in video_url or "youtu.be" in video_url:
+                ydl_opts.update({
+                    "youtube_include_dash_manifest": False,
+                    "youtube_skip_dash_manifest": True,
+                    "writesubtitles": False,
+                    "writeautomaticsub": False
+                })
+            
             with ytdlp.YoutubeDL(ydl_opts) as ydl:
                 info = ydl.extract_info(video_url, download=False)
                 return info
         except Exception as e:
             error_msg = str(e)
-            if "Cannot parse data" in error_msg and attempt < max_retries - 1:
+            if ("403" in error_msg or "Forbidden" in error_msg) and attempt < max_retries - 1:
+                st.warning(f"⚠️ Attempt {attempt + 1} failed (403 Forbidden). Trying with different settings... ({attempt + 2}/{max_retries})")
+                time.sleep(3 + attempt)  # Tăng thời gian chờ
+            elif "Cannot parse data" in error_msg and attempt < max_retries - 1:
                 st.warning(f"⚠️ Attempt {attempt + 1} failed. Retrying... ({attempt + 2}/{max_retries})")
                 time.sleep(2)
                 continue
@@ -214,6 +251,23 @@ def get_video_info(video_url, max_retries=3):
                     - **Wait a few minutes** - Some websites temporarily block requests
                     - **Check if the video is public** - Private/restricted videos cannot be downloaded
                     - **For YouTube Shorts**: Use the full URL, not the mobile short link
+                    """)
+            elif "403" in error_msg or "Forbidden" in error_msg:
+                st.error("❌ YouTube has blocked this request. This is common on hosted platforms like Streamlit Cloud.")
+                with st.expander("🔧 Why this happens & Solutions"):
+                    st.markdown("""
+                    **Why YouTube blocks hosted platforms:**
+                    - YouTube actively blocks server-based downloads to prevent abuse
+                    - Streamlit Cloud servers are detected and restricted
+                    - This works locally but fails on cloud hosting
+                    
+                    **Suggested solutions:**
+                    - **Try Facebook videos instead** - They usually work better
+                    - **Use shorter videos** - Less likely to be blocked
+                    - **Wait and retry** - Sometimes temporary blocks are lifted
+                    - **Try different YouTube URLs** - Some videos may work while others don't
+                    
+                    **Alternative:** Consider running this app locally for YouTube downloads.
                     """)
             else:
                 st.error(f"❌ Failed to get video info: {error_msg}")
@@ -245,9 +299,17 @@ def build_opts(
         "continuedl": True,
         "concurrent_fragment_downloads": concurrent_fragments or 1,
         "ratelimit": None,
+        "extractor_retries": 3,
+        "socket_timeout": 20,
+        "geo_bypass": True,
+        "geo_bypass_country": "US",
         "http_headers": {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36",
-            "Accept-Language": "en-US,en;q=0.9"
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+            "Accept-Language": "en-US,en;q=0.9",
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+            "Accept-Encoding": "gzip, deflate",
+            "Connection": "keep-alive",
+            "Upgrade-Insecure-Requests": "1"
         },
         "format": fmt,
         "quiet": False,
