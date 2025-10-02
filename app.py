@@ -4,12 +4,6 @@ import tempfile, time, os, glob
 import shutil
 from typing import Optional, Dict, Any
 
-# Import cloud configuration for Streamlit Cloud optimizations
-try:
-    import cloud_config
-except ImportError:
-    pass
-
 st.set_page_config(
     page_title="FB & YouTube Video Downloader", 
     page_icon="assets/fb_downloader.png", 
@@ -188,53 +182,19 @@ def ensure_download_dir(path_tmpl: str):
     else:
         Path(path_tmpl).parent.mkdir(parents=True, exist_ok=True)
 
-def get_video_info(video_url, max_retries=5):
-    import random
-    
-    # Danh sách User-Agent đa dạng để tránh detection
-    user_agents = [
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-        "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:109.0) Gecko/20100101 Firefox/121.0",
-        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:109.0) Gecko/20100101 Firefox/121.0"
-    ]
-    
+def get_video_info(video_url, max_retries=3):
     for attempt in range(max_retries):
         try:
-            # Chọn ngẫu nhiên User-Agent để tránh pattern detection
-            ua = random.choice(user_agents)
-            
             ydl_opts = {
                 "quiet": True,
                 "no_warnings": True,
                 "nocheckcertificate": True,
                 "listformats": True,
-                "extractor_retries": 3,
-                "sleep_interval": 1,
-                "max_sleep_interval": 5,
-                "socket_timeout": 30,
                 "http_headers": {
-                    "User-Agent": ua,
-                    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-                    "Accept-Language": "en-us,en;q=0.5",
-                    "Accept-Encoding": "gzip,deflate",
-                    "Accept-Charset": "ISO-8859-1,utf-8;q=0.7,*;q=0.7",
-                    "Connection": "keep-alive",
-                    "Upgrade-Insecure-Requests": "1"
-                },
-                # Thêm các options để bypass geo-restrictions
-                "geo_bypass": True,
-                "geo_bypass_country": "US",
-                # Sử dụng extractors cụ thể cho YouTube
-                "force_generic_extractor": False
+                    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36",
+                    "Accept-Language": "en-US,en;q=0.9"
+                }
             }
-            
-            # Thêm delay ngẫu nhiên giữa các attempts để tránh rate limiting
-            if attempt > 0:
-                delay = random.uniform(2, 5)
-                time.sleep(delay)
-            
             with ytdlp.YoutubeDL(ydl_opts) as ydl:
                 info = ydl.extract_info(video_url, download=False)
                 return info
@@ -248,24 +208,12 @@ def get_video_info(video_url, max_retries=5):
                 st.error("❌ Website changed their page structure or the video is unavailable. Please try again later or use a different video URL.")
                 with st.expander("🔧 Troubleshooting Tips"):
                     st.markdown("""
-                    **🛡️ Hệ thống chống 403 Forbidden đã được nâng cấp:**
-                    - **Mobile User-Agent**: Ưu tiên giả lập điện thoại để bypass
-                    - **Multiple Fallbacks**: Tự động thử 5+ phương pháp khác nhau  
-                    - **Smart Retry**: Delay thông minh giữa các attempts
-                    
-                    **📱 Các giải pháp khi gặp lỗi:**
                     - **Refresh the page** and try again
                     - **Copy the URL again** from Facebook or YouTube
                     - **Try a different video** to test if the issue is specific
                     - **Wait a few minutes** - Some websites temporarily block requests
                     - **Check if the video is public** - Private/restricted videos cannot be downloaded
                     - **For YouTube Shorts**: Use the full URL, not the mobile short link
-                    
-                    **☁️ Lưu ý về Streamlit Cloud:**
-                    - App sử dụng Mobile User-Agent (success rate ~70-80%)
-                    - Facebook videos thường ổn định hơn YouTube trên cloud
-                    - Hệ thống sẽ tự động thử tối đa 5 phương pháp khác nhau
-                    - Nếu vẫn không được, thử lại sau 5-10 phút
                     """)
             else:
                 st.error(f"❌ Failed to get video info: {error_msg}")
@@ -284,15 +232,6 @@ def build_opts(
     is_audio_only: bool = False
 ) -> Dict[str, Any]:
     ffmpeg_path = shutil.which("ffmpeg")
-    import random
-    
-    # Danh sách User-Agent đa dạng
-    user_agents = [
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-        "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-    ]
-    
     opts: Dict[str, Any] = {
         "outtmpl": outtmpl,
         "restrictfilenames": False,
@@ -303,51 +242,16 @@ def build_opts(
         "source_address": None,
         "retries": retries,
         "fragment_retries": retries,
-        "extractor_retries": 5,
         "continuedl": True,
-        "concurrent_fragment_downloads": 1,  # Giảm xuống 1 để tránh detection
+        "concurrent_fragment_downloads": concurrent_fragments or 1,
         "ratelimit": None,
-        "socket_timeout": 60,  # Tăng timeout
-        "sleep_interval": 2,   # Tăng sleep interval
-        "max_sleep_interval": 10,
-        "sleep_interval_requests": 2,  # Delay giữa các requests
-        "sleep_interval_subtitles": 1,
         "http_headers": {
-            "User-Agent": random.choice(user_agents),
-            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8",
-            "Accept-Language": "en-US,en;q=0.9",
-            "Accept-Encoding": "gzip, deflate, br",
-            "Connection": "keep-alive",
-            "Upgrade-Insecure-Requests": "1",
-            "Sec-Fetch-Dest": "document",
-            "Sec-Fetch-Mode": "navigate",
-            "Sec-Fetch-Site": "none",
-            "Sec-Fetch-User": "?1",
-            "Cache-Control": "max-age=0",
-            "DNT": "1",
-            "Sec-GPC": "1"
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36",
+            "Accept-Language": "en-US,en;q=0.9"
         },
         "format": fmt,
         "quiet": False,
         "no_warnings": False,
-        # Các tùy chọn bypass mạnh mẽ hơn
-        "geo_bypass": True,
-        "geo_bypass_country": ["US", "CA", "GB", "AU"],
-        "force_generic_extractor": False,
-        "prefer_free_formats": True,
-        "no_check_certificate": True,
-        # Bypass YouTube download throttling
-        "youtube_include_dash_manifest": False,
-        "extract_flat": False,
-        # Network resilience
-        "skip_unavailable_fragments": True,
-        "keep_fragments": False,
-        "abort_on_unavailable_fragment": False,
-        # Additional anti-detection measures
-        "writesubtitles": False,
-        "writeautomaticsub": False,
-        "writethumbnail": False,
-        "writeinfojson": False
     }
     if ffmpeg_path:
         opts["ffmpeg_location"] = ffmpeg_path
@@ -376,336 +280,6 @@ def build_opts(
     if cookies_path: opts["cookiefile"] = cookies_path
     if proxy: opts["proxy"] = proxy
     return opts
-
-def download_with_fallback(video_url, output_path, format_selector="best", max_retries=3):
-    """
-    Hàm download với multiple fallback strategies để bypass 403 Forbidden
-    """
-    import random
-    import subprocess
-    
-    # Chuyển đổi YouTube Shorts URL nếu cần
-    if "youtube.com/shorts/" in video_url:
-        video_id = video_url.split("/shorts/")[-1].split("?")[0]
-        original_url = video_url
-        video_url = f"https://www.youtube.com/watch?v={video_id}"
-        st.info(f"🔄 Phát hiện YouTube Shorts, chuyển đổi: {video_url}")
-    
-    # Strategy 1: Mobile User-Agent (PROVEN TO WORK!)
-    strategies = [
-        {
-            "name": "Mobile User-Agent (iOS Safari)",
-            "method": "ytdlp", 
-            "options": {
-                "quiet": False,
-                "nocheckcertificate": True,
-                "socket_timeout": 90,
-                "retries": 8,
-                "sleep_interval": 4,
-                "fragment_retries": 10,
-                "extractor_retries": 5,
-                "http_headers": {
-                    "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1"
-                },
-                "format": format_selector,
-                "outtmpl": output_path,
-                "geo_bypass": True,
-                "concurrent_fragment_downloads": 1,
-                "skip_unavailable_fragments": True,
-                "abort_on_unavailable_fragment": False
-            }
-        },
-        {
-            "name": "Mobile User-Agent (Android Chrome)",
-            "method": "ytdlp",
-            "options": {
-                "quiet": False,
-                "nocheckcertificate": True,
-                "socket_timeout": 90,
-                "retries": 8,
-                "sleep_interval": 3,
-                "http_headers": {
-                    "User-Agent": "Mozilla/5.0 (Linux; Android 13; SM-G991B) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36"
-                },
-                "format": format_selector,
-                "outtmpl": output_path,
-                "geo_bypass": True,
-                "concurrent_fragment_downloads": 1
-            }
-        },
-        {
-            "name": "Enhanced Desktop (Backup)",
-            "method": "ytdlp",
-            "options": {
-                "quiet": False,
-                "nocheckcertificate": True,
-                "socket_timeout": 60,
-                "retries": 10,
-                "fragment_retries": 10,
-                "extractor_retries": 5,
-                "sleep_interval": 3,
-                "max_sleep_interval": 15,
-                "http_headers": {
-                    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-                    "Accept": "*/*",
-                    "Accept-Language": "en-US,en;q=0.9",
-                    "Accept-Encoding": "gzip, deflate, br",
-                    "Origin": "https://www.youtube.com",
-                    "Referer": "https://www.youtube.com/"
-                },
-                "format": format_selector,
-                "outtmpl": output_path,
-                "geo_bypass": True,
-                "geo_bypass_country": "US",
-                "youtube_include_dash_manifest": False,
-                "concurrent_fragment_downloads": 1,
-                "skip_unavailable_fragments": True,
-                "abort_on_unavailable_fragment": False
-            }
-        },
-        {
-            "name": "Throttled download",
-            "method": "ytdlp",
-            "options": {
-                "quiet": False,
-                "nocheckcertificate": True,
-                "socket_timeout": 120,
-                "retries": 15,
-                "fragment_retries": 15,
-                "sleep_interval": 5,
-                "max_sleep_interval": 20,
-                "http_headers": {
-                    "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Safari/605.1.15"
-                },
-                "format": "worst[height<=480]/worst",  # Lower quality for better success
-                "outtmpl": output_path,
-                "ratelimit": "500K",  # Rate limit to avoid detection
-                "concurrent_fragment_downloads": 1,
-                "geo_bypass": True
-            }
-        },
-        {
-            "name": "Mobile User-Agent",
-            "method": "ytdlp", 
-            "options": {
-                "quiet": False,
-                "nocheckcertificate": True,
-                "socket_timeout": 90,
-                "retries": 8,
-                "sleep_interval": 4,
-                "http_headers": {
-                    "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1"
-                },
-                "format": format_selector,
-                "outtmpl": output_path,
-                "geo_bypass": True,
-                "concurrent_fragment_downloads": 1
-            }
-        },
-        {
-            "name": "Minimal approach",
-            "method": "ytdlp",
-            "options": {
-                "quiet": False,
-                "nocheckcertificate": True,
-                "http_headers": {
-                    "User-Agent": "wget/1.21.1"
-                },
-                "format": "worst/best",  # Try lowest quality first
-                "outtmpl": output_path,
-                "no_check_certificate": True
-            }
-        },
-        {
-            "name": "YouTube Shorts Handler",
-            "method": "ytdlp",
-            "options": {
-                "quiet": False,
-                "nocheckcertificate": True,
-                "socket_timeout": 60,
-                "http_headers": {
-                    "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 16_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.0 Mobile/15E148 Safari/604.1"
-                },
-                "format": "best[height<=720]/best",
-                "outtmpl": output_path,
-                "geo_bypass": True,
-                # Đặc biệt cho YouTube Shorts
-                "extractor_args": {
-                    "youtube": {
-                        "skip": ["dash", "hls"]
-                    }
-                }
-            }
-        },
-        {
-            "name": "Generic extractor (Last resort)",
-            "method": "ytdlp",
-            "options": {
-                "quiet": False,
-                "force_generic_extractor": True,
-                "nocheckcertificate": True,
-                "http_headers": {
-                    "User-Agent": "curl/7.68.0"
-                },
-                "format": "best",
-                "outtmpl": output_path,
-                "ignore_errors": True
-            }
-        }
-    ]
-    
-    for attempt in range(max_retries):
-        for strategy in strategies:
-            try:
-                st.info(f"🔄 Thử {strategy['name']} (lần {attempt + 1})...")
-                
-                # Add random delay between attempts
-                if attempt > 0:
-                    delay = random.uniform(3, 8)
-                    st.info(f"⏳ Chờ {delay:.1f} giây...")
-                    time.sleep(delay)
-                
-                with ytdlp.YoutubeDL(strategy["options"]) as ydl:
-                    ydl.download([video_url])
-                    return True
-                    
-            except Exception as e:
-                error_msg = str(e)
-                st.warning(f"❌ {strategy['name']} thất bại: {error_msg[:100]}...")
-                
-                # Check for specific errors
-                if "403" in error_msg or "Forbidden" in error_msg:
-                    continue  # Try next strategy
-                elif "404" in error_msg:
-                    st.error("Video không tồn tại hoặc đã bị xóa")
-                    return False
-                elif "private" in error_msg.lower():
-                    st.error("Video ở chế độ riêng tư")
-                    return False
-                elif "Unsupported URL" in error_msg and "/shorts/" in video_url:
-                    # Try converting shorts URL to regular format
-                    if "youtube.com/shorts/" in video_url:
-                        video_id = video_url.split("/shorts/")[-1].split("?")[0]
-                        regular_url = f"https://www.youtube.com/watch?v={video_id}"
-                        st.info(f"🔄 Đang thử chuyển Shorts URL: {regular_url}")
-                        # Recursively try with regular URL
-                        return download_with_fallback(regular_url, output_path, format_selector, 1)
-                    continue
-                elif "Failed to extract" in error_msg:
-                    continue  # Try next strategy
-    
-    # Nếu tất cả đều thất bại, thông báo lỗi cuối cùng
-    st.error("❌ Tất cả phương pháp download đều thất bại")
-    st.error("💡 **Gợi ý giải pháp:**")
-    st.error("- Thử video Facebook thay vì YouTube")
-    st.error("- Sử dụng URL video khác")
-    st.error("- Chờ và thử lại sau 10-15 phút")
-    return False
-
-def get_video_info_with_fallback(video_url, max_retries=3):
-    """
-    Hàm fallback với nhiều chiến lược khác nhau để bypass 403 Forbidden
-    """
-    import random
-    
-    # Chiến lược 1: Sử dụng các extractors khác nhau
-    extractors = [
-        # YouTube extractors
-        {"use_generic": False, "force_youtube": True},
-        {"use_generic": True, "force_youtube": False},
-        # Fallback extractors
-        {"use_generic": False, "force_youtube": False}
-    ]
-    
-    # Chiến lược 2: Các proxy miễn phí (có thể thêm proxy list)
-    proxy_list = [
-        None,  # Không sử dụng proxy
-        # Có thể thêm proxy miễn phí ở đây nếu có
-    ]
-    
-    # User agents đa dạng hơn
-    user_agents = [
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-        "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:109.0) Gecko/20100101 Firefox/121.0",
-        "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1"
-    ]
-    
-    for attempt in range(max_retries):
-        for extractor_config in extractors:
-            for proxy in proxy_list:
-                try:
-                    ua = random.choice(user_agents)
-                    
-                    ydl_opts = {
-                        "quiet": True,
-                        "no_warnings": True,
-                        "nocheckcertificate": True,
-                        "listformats": True,
-                        "extractor_retries": 3,
-                        "socket_timeout": 30,
-                        "http_headers": {
-                            "User-Agent": ua,
-                            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-                            "Accept-Language": "en-us,en;q=0.5",
-                            "Accept-Encoding": "gzip,deflate",
-                            "Connection": "keep-alive",
-                            "Upgrade-Insecure-Requests": "1",
-                            # Thêm headers giả lập trình duyệt thật
-                            "Cache-Control": "max-age=0",
-                            "sec-ch-ua": '"Not_A Brand";v="8", "Chromium";v="120"',
-                            "sec-ch-ua-mobile": "?0",
-                            "sec-ch-ua-platform": '"Windows"',
-                            "Sec-Fetch-Dest": "document",
-                            "Sec-Fetch-Mode": "navigate",
-                            "Sec-Fetch-Site": "none",
-                            "Sec-Fetch-User": "?1"
-                        },
-                        "geo_bypass": True,
-                        "geo_bypass_country": ["US", "CA", "GB"],
-                        "force_generic_extractor": extractor_config["use_generic"]
-                    }
-                    
-                    # Thêm proxy nếu có
-                    if proxy:
-                        ydl_opts["proxy"] = proxy
-                    
-                    # Thêm delay ngẫu nhiên
-                    if attempt > 0:
-                        delay = random.uniform(3, 8)
-                        time.sleep(delay)
-                    
-                    with ytdlp.YoutubeDL(ydl_opts) as ydl:
-                        info = ydl.extract_info(video_url, download=False)
-                        return info
-                        
-                except Exception as e:
-                    error_msg = str(e)
-                    # Tiếp tục với extractor/proxy khác
-                    continue
-    
-    # Nếu tất cả đều thất bại, thử với chiến lược cuối cùng
-    try:
-        st.warning("🔄 Đang thử phương pháp cuối cùng...")
-        
-        # Chiến lược cuối: Sử dụng generic extractor với minimal headers
-        ydl_opts = {
-            "quiet": True,
-            "force_generic_extractor": True,
-            "nocheckcertificate": True,
-            "http_headers": {
-                "User-Agent": "curl/7.68.0"  # Giả lập curl
-            }
-        }
-        
-        with ytdlp.YoutubeDL(ydl_opts) as ydl:
-            info = ydl.extract_info(video_url, download=False)
-            return info
-            
-    except Exception as final_error:
-        st.error(f"❌ Tất cả phương pháp đều thất bại. Lỗi cuối: {str(final_error)}")
-        return None
 
 # ===================== DEFAULTS =====================
 rate_limit = None
@@ -756,14 +330,7 @@ if url and url.strip() and url.strip() != st.session_state.current_url:
     st.session_state.current_url = url.strip()
     st.session_state.detailed_logs.clear()
     with st.spinner("Getting video information..."):
-        # Thử phương pháp tiêu chuẩn trước
         video_info = get_video_info(url.strip())
-        
-        # Nếu thất bại, thử fallback system
-        if not video_info:
-            st.warning("🔄 Phương pháp tiêu chuẩn thất bại. Đang thử các phương pháp khác...")
-            video_info = get_video_info_with_fallback(url.strip())
-            
     if video_info:
         st.session_state.video_info = video_info
         formats = video_info.get('formats', [])
@@ -1219,22 +786,8 @@ if st.session_state.video_info:
 
             ydl_opts["logger"] = StreamlitLogger()
 
-            # Thử download với fallback system trước
-            st.info("�️ **Hệ thống chống 403 Forbidden được kích hoạt**")
-            st.info("📱 Ưu tiên sử dụng Mobile User-Agent để bypass YouTube blocks...")
-            success = download_with_fallback(
-                url.strip(), 
-                ydl_opts["outtmpl"], 
-                ydl_opts.get("format", "best")
-            )
-            
-            if success:
-                ret = 0  # Success
-            else:
-                # Fallback cuối cùng với method cũ
-                st.warning("🔄 Thử phương pháp cuối cùng...")
-                with ytdlp.YoutubeDL(ydl_opts) as ydl:
-                    ret = ydl.download([url.strip()])
+            with ytdlp.YoutubeDL(ydl_opts) as ydl:
+                ret = ydl.download([url.strip()])
 
             if ret == 0:
                 final_file = None
