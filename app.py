@@ -182,215 +182,26 @@ def ensure_download_dir(path_tmpl: str):
     else:
         Path(path_tmpl).parent.mkdir(parents=True, exist_ok=True)
 
-def is_streamlit_cloud():
-    """Detect if running on Streamlit Cloud"""
-    import socket
-    hostname = socket.gethostname()
-    return any(indicator in hostname.lower() for indicator in ['streamlit', 'cloud', 'share'])
-
-def get_enhanced_headers(platform="youtube", attempt=0):
-    """Get enhanced headers based on platform and attempt number"""
-    base_headers = {
-        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7",
-        "Accept-Language": "en-US,en;q=0.9,vi;q=0.8",
-        "Accept-Encoding": "gzip, deflate, br",
-        "DNT": "1",
-        "Connection": "keep-alive",
-        "Upgrade-Insecure-Requests": "1",
-        "Sec-Fetch-Dest": "document",
-        "Sec-Fetch-Mode": "navigate",
-        "Sec-Fetch-Site": "none",
-        "Sec-Fetch-User": "?1",
-        "Cache-Control": "no-cache",
-        "Pragma": "no-cache"
-    }
-    
-    # Rotate User-Agents based on attempt
-    user_agents = [
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36",
-        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36", 
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36 Edg/124.0.0.0",
-        "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36",
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:126.0) Gecko/20100101 Firefox/126.0",
-        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:126.0) Gecko/20100101 Firefox/126.0"
-    ]
-    
-    base_headers["User-Agent"] = user_agents[attempt % len(user_agents)]
-    
-    # Platform-specific headers
-    if platform == "youtube":
-        base_headers["Referer"] = "https://www.youtube.com/"
-        base_headers["Origin"] = "https://www.youtube.com"
-    elif platform == "facebook":
-        base_headers["Referer"] = "https://www.facebook.com/"
-        base_headers["Origin"] = "https://www.facebook.com"
-        
-    return base_headers
-
-def get_video_info_with_fallback(video_url, attempt_num=0):
-    """Try different extraction methods for YouTube"""
-    methods = [
-        # Method 1: Standard with enhanced headers
-        {
-            "name": "Enhanced Headers",
-            "opts": lambda headers: {
-                "quiet": True,
-                "no_warnings": True,
-                "nocheckcertificate": True,
-                "listformats": True,
-                "extractor_retries": 5,
-                "fragment_retries": 10,
-                "socket_timeout": 60,
-                "http_headers": headers
-            }
-        },
-        # Method 2: Use different client
-        {
-            "name": "Web Client",
-            "opts": lambda headers: {
-                "quiet": True,
-                "no_warnings": True,
-                "nocheckcertificate": True,
-                "listformats": True,
-                "extractor_retries": 3,
-                "http_headers": headers,
-                "extractor_args": {
-                    "youtube": {
-                        "player_client": ["web"],
-                        "skip": ["dash", "hls"]
-                    }
-                }
-            }
-        },
-        # Method 3: Mobile client
-        {
-            "name": "Mobile Client",
-            "opts": lambda headers: {
+def get_video_info(video_url, max_retries=3):
+    for attempt in range(max_retries):
+        try:
+            ydl_opts = {
                 "quiet": True,
                 "no_warnings": True,
                 "nocheckcertificate": True,
                 "listformats": True,
                 "http_headers": {
-                    "User-Agent": "com.google.android.youtube/19.09.37 (Linux; U; Android 11) gzip",
+                    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36",
                     "Accept-Language": "en-US,en;q=0.9"
-                },
-                "extractor_args": {
-                    "youtube": {
-                        "player_client": ["android"],
-                        "skip": ["dash"]
-                    }
                 }
             }
-        },
-        # Method 4: TV client  
-        {
-            "name": "TV Client",
-            "opts": lambda headers: {
-                "quiet": True,
-                "no_warnings": True, 
-                "nocheckcertificate": True,
-                "listformats": True,
-                "http_headers": headers,
-                "extractor_args": {
-                    "youtube": {
-                        "player_client": ["tv_embedded"],
-                        "skip": ["hls"]
-                    }
-                }
-            }
-        }
-    ]
-    
-    platform = "youtube" if any(x in video_url for x in ["youtube.com", "youtu.be"]) else "facebook"
-    headers = get_enhanced_headers(platform, attempt_num)
-    
-    # Try each method
-    method = methods[attempt_num % len(methods)]
-    ydl_opts = method["opts"](headers)
-    
-    # Add Streamlit Cloud optimizations
-    if is_streamlit_cloud():
-        ydl_opts.update({
-            "retries": 10,
-            "fragment_retries": 15,
-            "sleep_interval": 1,
-            "max_sleep_interval": 5
-        })
-    
-    try:
-        with ytdlp.YoutubeDL(ydl_opts) as ydl:
-            info = ydl.extract_info(video_url, download=False)
-            return info, method["name"]
-    except Exception as e:
-        raise e
-
-def get_video_info(video_url, max_retries=8):
-    """Enhanced video info extraction with multiple fallback methods"""
-    # Increase retries for Streamlit Cloud
-    if is_streamlit_cloud():
-        max_retries = 10
-        
-    # Detect platform
-    platform = "youtube" if any(x in video_url for x in ["youtube.com", "youtu.be"]) else "facebook"
-    
-    for attempt in range(max_retries):
-        try:
-            info, method_used = get_video_info_with_fallback(video_url, attempt)
-            if attempt > 0:  # Show success message if it took multiple attempts
-                st.success(f"✅ Successfully extracted info using {method_used} (attempt {attempt + 1})")
-            return info
+            with ytdlp.YoutubeDL(ydl_opts) as ydl:
+                info = ydl.extract_info(video_url, download=False)
+                return info
         except Exception as e:
             error_msg = str(e)
-            
-            # Handle YouTube player response errors specifically
-            if "Failed to extract any player response" in error_msg:
-                if attempt < max_retries - 1:
-                    method_names = ["Enhanced Headers", "Web Client", "Mobile Client", "TV Client"]
-                    current_method = method_names[attempt % len(method_names)]
-                    next_method = method_names[(attempt + 1) % len(method_names)]
-                    st.warning(f"⚠️ YouTube API changed. Trying {next_method}... (attempt {attempt + 1}/{max_retries})")
-                    time.sleep(2)
-                    continue
-                else:
-                    st.error("❌ YouTube has updated their system. All extraction methods failed.")
-                    with st.expander("🔧 Solutions for YouTube Extraction Errors"):
-                        st.markdown("""
-                        **Try these solutions:**
-                        - Wait 10-15 minutes and try again
-                        - Copy the URL from a fresh incognito browser tab
-                        - Try a different YouTube video to test if it's video-specific
-                        - Use the full YouTube URL (not shortened youtu.be links)
-                        
-                        **Technical info:**
-                        - YouTube frequently updates their API to prevent downloads
-                        - yt-dlp needs time to adapt to these changes
-                        - This is temporary - usually fixed within hours/days
-                        """)
-            # Handle 403 Forbidden errors specifically  
-            elif "403" in error_msg or "Forbidden" in error_msg:
-                if attempt < max_retries - 1:
-                    delay = 5 if is_streamlit_cloud() else 3
-                    st.warning(f"⚠️ Access denied (attempt {attempt + 1}). Trying different approach... ({attempt + 2}/{max_retries})")
-                    st.info(f"⏳ Waiting {delay} seconds before retry...")
-                    time.sleep(delay)
-                    continue
-                else:
-                    st.error("❌ Access Forbidden (HTTP 403). This may be due to regional restrictions or anti-bot protection.")
-                    with st.expander("🔧 Solutions for 403 Errors"):
-                        st.markdown("""
-                        **For YouTube videos:**
-                        - Try using the video URL from incognito/private browser
-                        - Check if video is available in your region
-                        - Wait 10-15 minutes before trying again
-                        - Try downloading during off-peak hours
-                        
-                        **For Facebook videos:**
-                        - Make sure the video is public (not private/friends only)
-                        - Try copying the URL again from a fresh browser session
-                        - Use the full Facebook URL, not a shortened fb.watch link
-                        """)
-            elif "Cannot parse data" in error_msg and attempt < max_retries - 1:
-                st.warning(f"⚠️ Parsing failed (attempt {attempt + 1}). Retrying... ({attempt + 2}/{max_retries})")
+            if "Cannot parse data" in error_msg and attempt < max_retries - 1:
+                st.warning(f"⚠️ Attempt {attempt + 1} failed. Retrying... ({attempt + 2}/{max_retries})")
                 time.sleep(2)
                 continue
             elif "Cannot parse data" in error_msg:
@@ -405,12 +216,7 @@ def get_video_info(video_url, max_retries=8):
                     - **For YouTube Shorts**: Use the full URL, not the mobile short link
                     """)
             else:
-                if attempt < max_retries - 1:
-                    st.warning(f"⚠️ Error occurred (attempt {attempt + 1}): {error_msg[:100]}... Retrying with different method...")
-                    time.sleep(2)
-                    continue
-                else:
-                    st.error(f"❌ Failed to get video info after {max_retries} attempts: {error_msg}")
+                st.error(f"❌ Failed to get video info: {error_msg}")
             return None
     return None
 
@@ -423,18 +229,9 @@ def build_opts(
     retries: int,
     proxy: Optional[str],
     no_check_certificate: bool = False,
-    is_audio_only: bool = False,
-    video_url: str = ""
+    is_audio_only: bool = False
 ) -> Dict[str, Any]:
     ffmpeg_path = shutil.which("ffmpeg")
-    
-    # Detect platform and get appropriate headers
-    platform = "youtube" if any(x in video_url for x in ["youtube.com", "youtu.be"]) else "facebook"
-    enhanced_headers = get_enhanced_headers(platform, 0)
-    
-    # Base retries, increase for Streamlit Cloud
-    base_retries = retries * 2 if is_streamlit_cloud() else retries
-    
     opts: Dict[str, Any] = {
         "outtmpl": outtmpl,
         "restrictfilenames": False,
@@ -443,13 +240,15 @@ def build_opts(
         "consoletitle": False,
         "nocheckcertificate": no_check_certificate,
         "source_address": None,
-        "retries": base_retries,
-        "fragment_retries": base_retries,
+        "retries": retries,
+        "fragment_retries": retries,
         "continuedl": True,
         "concurrent_fragment_downloads": concurrent_fragments or 1,
         "ratelimit": None,
-        "socket_timeout": 60,
-        "http_headers": enhanced_headers,
+        "http_headers": {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36",
+            "Accept-Language": "en-US,en;q=0.9"
+        },
         "format": fmt,
         "quiet": False,
         "no_warnings": False,
@@ -975,8 +774,7 @@ if st.session_state.video_info:
                 retries=int(retries),
                 proxy=proxy or None,
                 no_check_certificate=bool(no_check_cert),
-                is_audio_only=is_audio_only,
-                video_url=url_input
+                is_audio_only=is_audio_only
             )
             ydl_opts["progress_hooks"] = [progress_hook]
 
