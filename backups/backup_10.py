@@ -255,7 +255,7 @@ def progress_hook(d):
     elif d.get("status") == "finished":
         file_out = d.get("filename")
         progress.progress(100, text="Processing & finalizing...")
-        msg = "Processing & converting video format..."
+        msg = f"Processing: {Path(file_out).name}"
         log_area.info(msg)
         error_logs.append(f"INFO: {msg}")
 
@@ -332,9 +332,9 @@ if st.session_state.video_info:
 
     status_placeholder = st.empty()
     if st.session_state.download_completed:
-        status_placeholder.success("✅ Video loaded successfully!")
+        status_placeholder.success("✅ Video downloaded successfully!")
     else:
-        status_placeholder.info("✨ Preparing to processing & converting video format...")
+        status_placeholder.success("✅ Video loaded successfully!")
 
     # placeholders cho tiến trình & log
     log_area = st.empty()
@@ -378,54 +378,6 @@ if st.session_state.video_info:
             except:
                 st.info("No thumbnail available")
 
-    # Generate custom filename based on platform and video type
-    def generate_custom_filename(url, video_info, is_audio, selected_format=None):
-        video_id = video_info.get('id', 'unknown')
-        ext = 'mp3' if is_audio else 'mp4'
-        
-        # Get quality info
-        quality_suffix = ""
-        if not is_audio and selected_format:
-            height = selected_format.get('height', 0)
-            if height:
-                quality_suffix = f"_{height}p"
-        elif is_audio:
-            quality_suffix = "_audio"
-        
-        if 'facebook.com' in url:
-            if '/reel/' in url:
-                return f"downloads/fb_reel_{video_id}{quality_suffix}.{ext}"
-            else:
-                return f"downloads/fb_video_{video_id}{quality_suffix}.{ext}"
-        elif 'youtu' in url or 'youtube.com' in url:
-            # Detect YouTube Shorts more accurately
-            is_short = False
-            
-            # Method 1: Check URL patterns
-            if '/shorts/' in url or 'youtube.com/shorts/' in video_info.get('webpage_url', ''):
-                is_short = True
-            
-            # Method 2: Check duration (shorts are max 60 seconds) 
-            duration = video_info.get('duration', 0)
-            if not is_short and duration and duration <= 60:
-                # Additional check: aspect ratio or other metadata
-                formats = video_info.get('formats', [])
-                for fmt in formats:
-                    height = fmt.get('height', 0)
-                    width = fmt.get('width', 0)
-                    # Portrait orientation often indicates Shorts
-                    if height and width and height > width:
-                        is_short = True
-                        break
-            
-            if is_short:
-                return f"downloads/ytb_short_{video_id}{quality_suffix}.{ext}"
-            else:
-                return f"downloads/ytb_video_{video_id}{quality_suffix}.{ext}"
-        else:
-            # Fallback for other platforms
-            return f"downloads/video_{video_id}{quality_suffix}.{ext}"
-
     with col_right:
         download_type = st.selectbox("**Type:**", ["Video + Audio", "Audio Only"], index=0)
 
@@ -446,14 +398,7 @@ if st.session_state.video_info:
             else:
                 fmt = "best[height<=1080]+bestaudio/best[height<=1080]/best"
         else:
-            selected_format = None  # For audio-only mode
             fmt = "bestaudio[ext=m4a]/bestaudio/best"
-
-        # Generate custom filename with quality info
-        outtmpl = generate_custom_filename(url, info, download_type == "Audio Only", selected_format)
-        
-        # Show filename preview
-        filename_preview = outtmpl.split('/')[-1]  # Get just the filename part
 
         if info.get('description'):
             st.markdown("##### Description:")
@@ -471,12 +416,10 @@ if st.session_state.video_info:
         st.markdown(f"&nbsp;&nbsp;&nbsp;&nbsp; - Duration: {info.get('duration_string', 'N/A')}", unsafe_allow_html=True)
         if info.get('view_count'):
             st.markdown(f"&nbsp;&nbsp;&nbsp;&nbsp; - Views: {info.get('view_count', 0):,}", unsafe_allow_html=True)
-        ffmpeg_available = "Available" if shutil.which("ffmpeg") else "Not found"
+        ffmpeg_available = "✅ Available" if shutil.which("ffmpeg") else "❌ Not found"
         st.markdown(f"&nbsp;&nbsp;&nbsp;&nbsp; - FFmpeg: {ffmpeg_available}", unsafe_allow_html=True)
-        
-        # Show filename preview
-        filename_preview = outtmpl.split('/')[-1]  # Get just the filename part
-        st.markdown(f"&nbsp;&nbsp;&nbsp;&nbsp; - Output file: `{filename_preview}`", unsafe_allow_html=True)
+
+        outtmpl = "downloads/%(title).100s-%(id)s.%(ext)s" if download_type == "Audio Only" else "downloads/%(title).80s-%(id)s.%(ext)s"
 
     # ===================== AUTO DOWNLOAD =====================
     if not st.session_state.download_completed:
@@ -529,27 +472,15 @@ if st.session_state.video_info:
                     st.session_state.download_completed = True
                     st.session_state.downloaded_file = final_file
                     status_placeholder.success("✅ Video downloaded successfully!")
-                    # Clear progress bar and processing message
-                    progress.empty()
-                    log_area.empty()
                 else:
                     st.warning("❌ Download completed but file not found.")
             else:
                 st.error(f"❌ Download failed with return code: {ret}")
-                # Clear progress bar on failure
-                progress.empty()
-                log_area.empty()
 
         except ytdlp.utils.DownloadError as e:
             st.error(f"❌ Download Error: {str(e)}")
-            # Clear progress bar on error
-            progress.empty()
-            log_area.empty()
         except Exception as e:
             st.error(f"Unexpected error: {str(e)}")
-            # Clear progress bar on error
-            progress.empty()
-            log_area.empty()
 
     # ====== LOG EXPANDER: luôn render khi đã load video (vị trí ngay trên nút Download) ======
     with st.expander("📋 Show detailed logs"):
