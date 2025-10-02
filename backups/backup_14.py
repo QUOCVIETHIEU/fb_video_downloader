@@ -11,13 +11,29 @@ st.set_page_config(
     initial_sidebar_state="collapsed"
 )
 
-# ===================== CSS =====================
+# ===================== CSS (đã thêm fix viền đỏ cho button) =====================
 st.markdown("""
 <style>
-    :root { --text-color: #333333; }
-    @media (prefers-color-scheme: dark) { :root { --text-color: #ffffff; } }
-    .stApp[data-theme="dark"] { --text-color: #ffffff; }
-    .stApp[data-theme="light"] { --text-color: #333333; }
+    /* CSS Variables for theme-responsive colors */
+    :root {
+        --text-color: #333333;
+    }
+    
+    /* Dark theme support */
+    @media (prefers-color-scheme: dark) {
+        :root {
+            --text-color: #ffffff;
+        }
+    }
+    
+    /* Streamlit dark theme class override */
+    .stApp[data-theme="dark"] {
+        --text-color: #ffffff;
+    }
+    
+    .stApp[data-theme="light"] {
+        --text-color: #333333;
+    }
 
     .main-header {
         text-align: center;
@@ -25,9 +41,10 @@ st.markdown("""
         background: linear-gradient(0deg, #0088F8 0%, #006FCB 100%);
         color: white;
         margin: -1rem -1rem 1rem -1rem;
-        border-radius: 10px;
+        border-radius: 10px 10px 10px 10px;
     }
 
+    /* Style nút mặc định */
     .stDownloadButton > button {
         width: 100%;
         background: linear-gradient(0deg, #2B79C2 0%, #006FCB 100%) !important;
@@ -35,10 +52,10 @@ st.markdown("""
         border-radius: 20px !important;
         padding: 0.6rem 1.5rem !important;
         font-weight: 600 !important;
-        border: 1px solid transparent !important;
-        outline: none !important;
-        box-shadow: none !important;
-        -webkit-appearance: none;
+        border: 1px solid transparent !important; /* FIX viền */
+        outline: none !important;                 /* FIX viền */
+        box-shadow: none !important;              /* FIX viền */
+        -webkit-appearance: none;                 /* Safari */
         text-align: center;
     }
     .stDownloadButton > button:hover { filter: brightness(1.05); }
@@ -84,44 +101,61 @@ if 'downloaded_file' not in st.session_state:
     st.session_state.downloaded_file = None
 if 'current_url' not in st.session_state:
     st.session_state.current_url = ""
+# NEW: giữ log giữa các lần rerun
 if 'detailed_logs' not in st.session_state:
     st.session_state.detailed_logs = []
+# Track temp files để cleanup
 if 'temp_files' not in st.session_state:
     st.session_state.temp_files = []
+# NEW: State to track selection changes
 if 'last_selected_format_id' not in st.session_state:
     st.session_state.last_selected_format_id = None
 if 'last_download_type' not in st.session_state:
     st.session_state.last_download_type = "Video"
-if 'session_initialized' not in st.session_state:
-    st.session_state.session_initialized = True
 
 # ===================== IMPORT =====================
 try:
     import yt_dlp as ytdlp
-except Exception:
+except Exception as e:
     st.error("Missing dependency `yt-dlp`. Please install with `pip install -r requirements.txt` and rerun.")
     st.stop()
 
-# ===================== HELPERS =====================
+# ===================== TEMP FILE CLEANUP =====================
 def cleanup_temp_files():
+    """Clean up temporary files"""
     for temp_file in st.session_state.temp_files:
         try:
             if os.path.exists(temp_file):
                 os.remove(temp_file)
-        except Exception:
-            pass
+        except Exception as e:
+            pass  # Ignore errors
     st.session_state.temp_files.clear()
 
-def ensure_download_dir(path_tmpl: str):
-    p = Path(path_tmpl)
-    if "%(" in path_tmpl:
-        base = Path(path_tmpl.split("%(")[0]).expanduser()
-        if base and str(base).strip() and not base.exists():
-            base.mkdir(parents=True, exist_ok=True)
-    else:
-        Path(path_tmpl).parent.mkdir(parents=True, exist_ok=True)
+# Initialize session flag
+if 'session_initialized' not in st.session_state:
+    st.session_state.session_initialized = True
+    # Cleanup any existing temp files from previous sessions
+    cleanup_temp_files()
 
+# ===================== DEFAULTS =====================
+rate_limit = None
+retries = 10
+concurrent_frags = 1
+proxy = None
+no_check_cert = True
+
+# ===================== INPUT URL =====================
+st.markdown("### Enter Video URL")
+url = st.text_input(
+    "ⓕ Facebook video Url:", 
+    placeholder="https://www.facebook.com/reel/...", 
+    help="Paste your Facebook video or reel URL here and press Enter",
+    key="url_input",
+)
+
+# ===================== GET INFO =====================
 def get_video_info(video_url, max_retries=3):
+    """Get video info with retry logic for Facebook parsing errors"""
     for attempt in range(max_retries):
         try:
             ydl_opts = {
@@ -144,7 +178,7 @@ def get_video_info(video_url, max_retries=3):
                 time.sleep(2)
                 continue
             elif "Cannot parse data" in error_msg:
-                st.error("❌ Facebook changed their page structure. Please try again later or use a different video URL.")
+                st.error("❌ Facebook changed their page structure. Please try again in a few moments or use a different video URL.")
                 with st.expander("🔧 Troubleshooting Tips"):
                     st.markdown("""
                     - **Refresh the page** and try again
@@ -156,6 +190,16 @@ def get_video_info(video_url, max_retries=3):
                 st.error(f"❌ Failed to get video info: {error_msg}")
             return None
     return None
+
+# ===================== HELPERS =====================
+def ensure_download_dir(path_tmpl: str):
+    p = Path(path_tmpl)
+    if "%(" in path_tmpl:
+        base = Path(path_tmpl.split("%(")[0]).expanduser()
+        if base and str(base).strip() and not base.exists():
+            base.mkdir(parents=True, exist_ok=True)
+    else:
+        Path(path_tmpl).parent.mkdir(parents=True, exist_ok=True)
 
 def build_opts(
     outtmpl: str,
@@ -195,14 +239,17 @@ def build_opts(
 
     if is_audio_only:
         if ffmpeg_path:
+            # Tải video và convert thành MP3
             opts["postprocessors"] = [{
                 'key': 'FFmpegExtractAudio',
                 'preferredcodec': 'mp3',
                 'preferredquality': '192',
             }]
             opts["merge_output_format"] = "mp3"
-            opts["keep_video"] = False
+            # Đảm bảo giữ file gốc trong quá trình xử lý
+            opts["keep_video"] = False  # Xóa video sau khi extract audio
         else:
+            # Nếu không có FFmpeg, tải audio trực tiếp
             opts["format"] = "bestaudio/best"
             st.warning("⚠️ FFmpeg không có sẵn. Sẽ tải audio format gốc thay vì MP3.")
     else:
@@ -218,41 +265,56 @@ def build_opts(
     if proxy: opts["proxy"] = proxy
     return opts
 
-# ===================== DEFAULTS =====================
-rate_limit = None
-retries = 10
-concurrent_frags = 1
-proxy = None
-no_check_cert = True
-
-# ===================== INPUT URL =====================
-st.markdown("### Enter Video URL")
-url = st.text_input(
-    "ⓕ Facebook video Url:", 
-    placeholder="https://www.facebook.com/reel/...", 
-    help="Paste your Facebook video or reel URL here and press Enter",
-    key="url_input",
-)
-
-# Dùng logs trong session để không mất khi rerun
-error_logs = st.session_state.detailed_logs
 last_percent = 0
 file_out = None
 
-# Variables for progress tracking
+# Dùng logs trong session để không mất khi rerun
+error_logs = st.session_state.detailed_logs
 
-# ===================== GET INFO khi URL đổi =====================
+def progress_hook(d):
+    global last_percent, file_out
+    if d.get("status") == "downloading":
+        total = d.get("total_bytes") or d.get("total_bytes_estimate") or 0
+        downloaded = d.get("downloaded_bytes") or 0
+        percent = 0 if total == 0 else int(downloaded * 100 / total)
+        if percent != last_percent:
+            progress.progress(min(percent, 100), text=f"Downloading... {percent}%")
+            last_percent = percent
+        spd = d.get("speed")
+        eta = d.get("eta")
+        status_text = f"{percent}% | {(spd and f'{spd/1024/1024:.2f} MB/s') or '–'} | ETA: {eta or '–'} s"
+        log_area.info(status_text)
+        error_logs.append(f"PROGRESS: {status_text}")
+    elif d.get("status") == "finished":
+        file_out = d.get("filename")
+        progress.progress(100, text="Processing & finalizing...")
+        # Kiểm tra nếu đang tải audio để hiển thị message phù hợp
+        if 'audio' in str(d.get("info_dict", {}).get("ext", "")).lower():
+            msg = "Converting video to MP3 audio format..."
+        else:
+            msg = "Processing & converting video format..."
+        log_area.warning(msg)  # Dùng warning để hiển thị màu vàng
+        error_logs.append(f"INFO: {msg}")
+
+# Auto-download khi URL đổi
 if url and url.strip() and url.strip() != st.session_state.current_url:
+    # Cleanup temp files từ lần trước
     cleanup_temp_files()
+    
     st.session_state.download_completed = False
     st.session_state.downloaded_file = None
     st.session_state.current_url = url.strip()
+    
+    # Nếu muốn mỗi URL là log mới, uncomment dòng dưới:
     st.session_state.detailed_logs.clear()
+
     with st.spinner("Getting video information..."):
         video_info = get_video_info(url.strip())
+
     if video_info:
         st.session_state.video_info = video_info
         formats = video_info.get('formats', [])
+
         unique_formats = {}
         for f in formats:
             if f.get('vcodec') != 'none' and f.get('height'):
@@ -261,8 +323,10 @@ if url and url.strip() and url.strip() != st.session_state.current_url:
                 filesize = f.get('filesize') or 0
                 fps = f.get('fps') or 0
                 has_audio = f.get('acodec') != 'none'
+
                 key = f"{height}p-{ext.upper()}"
                 current_filesize = unique_formats.get(key, {}).get('filesize', 0) or 0
+
                 if key not in unique_formats or filesize > current_filesize:
                     quality_label = f"{height}p - {ext.upper()}"
                     if fps > 0: quality_label += f" ({fps}fps)"
@@ -270,6 +334,7 @@ if url and url.strip() and url.strip() != st.session_state.current_url:
                     if filesize > 0:
                         size_mb = filesize / (1024*1024)
                         quality_label += f" (~{size_mb:.1f}MB)"
+
                     unique_formats[key] = {
                         'format_id': f.get('format_id'),
                         'label': quality_label,
@@ -278,6 +343,7 @@ if url and url.strip() and url.strip() != st.session_state.current_url:
                         'filesize': filesize,
                         'has_audio': has_audio
                     }
+
         video_formats = list(unique_formats.values())
         video_formats.sort(key=lambda x: (x['has_audio'], x['height'], x['filesize']), reverse=True)
         st.session_state.formats = video_formats
@@ -306,11 +372,13 @@ if st.session_state.video_info:
 
     status_placeholder = st.empty()
     if st.session_state.download_completed:
+        # Hiển thị message khác nhau tùy theo type đã chọn
         if st.session_state.get('last_download_type') == "Audio":
             status_placeholder.success("✅ Audio converted and ready to download!")
         else:
             status_placeholder.success("✅ Video loaded successfully!")
     else:
+        # Hiển thị message chuẩn bị khác nhau tùy theo type
         if st.session_state.get('last_download_type') == "Audio":
             status_placeholder.warning("🎵 Preparing to download video and convert to MP3...")
         else:
@@ -320,30 +388,25 @@ if st.session_state.video_info:
     log_area = st.empty()
     progress = st.empty()
 
-    col_left, col_right = st.columns([2, 3])
+    col_left, col_right = st.columns([1, 1])
 
     with col_left:
-        # Use st.empty() to ensure single preview in left column
-        preview_area = st.empty()
-        
         if info.get('thumbnail'):
             try:
                 preview_url = None
                 if info.get('formats'):
-                    video_formats_all = [f for f in info.get('formats', []) if f.get('vcodec') != 'none' and f.get('url')]
-                    if video_formats_all:
-                        video_formats_all.sort(key=lambda x: x.get('height', 0) or 0)
-                        preview_url = video_formats_all[0].get('url')
-                
-                # Render preview in the left column only
+                    video_formats = [f for f in info.get('formats', []) if f.get('vcodec') != 'none' and f.get('url')]
+                    if video_formats:
+                        video_formats.sort(key=lambda x: x.get('height', 0) or 0)
+                        preview_url = video_formats[0].get('url')
                 if preview_url:
-                    preview_area.markdown(f"""
+                    st.markdown(f"""
                     <div class="preview-wrap">
                         <video 
                             controls 
                             controlslist="nodownload" 
                             oncontextmenu="return false;" 
-                            style="width: 100%; height: 100%; object-fit: contain;" 
+                            style="max-width: 100%; max-height: 100%; object-fit: contain;" 
                             poster="{info.get('thumbnail', '')}"
                             preload="metadata"
                         >
@@ -354,22 +417,23 @@ if st.session_state.video_info:
                     <p style="text-align:center; color:#ccc; font-size:0.9em; margin-top:6px;">Video Preview</p>
                     """, unsafe_allow_html=True)
                 else:
-                    preview_area.markdown(f"""
+                    st.markdown(f"""
                     <div class="preview-wrap">
                         <img src="{info.get('thumbnail','')}" style="max-width:100%; max-height:100%; object-fit:contain;" />
                     </div>
                     <p style="text-align:center; color:#ccc; font-size:0.9em; margin-top:6px;">Video Thumbnail (Preview not available)</p>
                     """, unsafe_allow_html=True)
-            except Exception:
-                preview_area.info("No thumbnail available")
-        else:
-            preview_area.info("No thumbnail available")
+            except:
+                st.info("No thumbnail available")
 
     # Generate custom filename based on platform and video type
     def generate_custom_filename(url, video_info, is_audio, selected_format=None):
         video_id = video_info.get('id', 'unknown')
+        
+        # Cho audio: không thêm extension vì yt-dlp sẽ tự thêm .mp3 khi convert
+        # Cho video: thêm .mp4 bình thường
         if is_audio:
-            ext = ""
+            ext = ""  # Không có extension, yt-dlp sẽ tự thêm .mp3
             quality_suffix = "_audio"
         else:
             ext = "mp4"
@@ -378,61 +442,91 @@ if st.session_state.video_info:
                 height = selected_format.get('height', 0)
                 if height:
                     quality_suffix = f"_{height}p"
-
+        
+        # Generate filename without path
+        filename = ""
         if 'facebook.com' in url:
             if '/reel/' in url:
-                filename = f"fb_reel_{video_id}{quality_suffix}" + ("" if is_audio else f".{ext}")
+                if is_audio:
+                    filename = f"fb_reel_{video_id}{quality_suffix}"  # No extension for audio
+                else:
+                    filename = f"fb_reel_{video_id}{quality_suffix}.{ext}"
             else:
-                filename = f"fb_video_{video_id}{quality_suffix}" + ("" if is_audio else f".{ext}")
+                if is_audio:
+                    filename = f"fb_video_{video_id}{quality_suffix}"  # No extension for audio
+                else:
+                    filename = f"fb_video_{video_id}{quality_suffix}.{ext}"
         elif 'youtu' in url or 'youtube.com' in url:
+            # Detect YouTube Shorts more accurately
             is_short = False
+            
+            # Method 1: Check URL patterns
             if '/shorts/' in url or 'youtube.com/shorts/' in video_info.get('webpage_url', ''):
                 is_short = True
+            
+            # Method 2: Check duration (shorts are max 60 seconds) 
             duration = video_info.get('duration', 0)
             if not is_short and duration and duration <= 60:
+                # Additional check: aspect ratio or other metadata
                 formats = video_info.get('formats', [])
                 for fmt in formats:
-                    h = fmt.get('height', 0)
-                    w = fmt.get('width', 0)
-                    if h and w and h > w:
+                    height = fmt.get('height', 0)
+                    width = fmt.get('width', 0)
+                    # Portrait orientation often indicates Shorts
+                    if height and width and height > width:
                         is_short = True
                         break
-            prefix = "ytb_short_" if is_short else "ytb_video_"
-            filename = f"{prefix}{video_id}{quality_suffix}" + ("" if is_audio else f".{ext}")
+            
+            if is_short:
+                if is_audio:
+                    filename = f"ytb_short_{video_id}{quality_suffix}"  # No extension for audio
+                else:
+                    filename = f"ytb_short_{video_id}{quality_suffix}.{ext}"
+            else:
+                if is_audio:
+                    filename = f"ytb_video_{video_id}{quality_suffix}"  # No extension for audio  
+                else:
+                    filename = f"ytb_video_{video_id}{quality_suffix}.{ext}"
         else:
-            filename = f"video_{video_id}{quality_suffix}" + ("" if is_audio else f".{ext}")
-
+            # Fallback for other platforms
+            if is_audio:
+                filename = f"video_{video_id}{quality_suffix}"  # No extension for audio
+            else:
+                filename = f"video_{video_id}{quality_suffix}.{ext}"
+        
+        # Create temp file path và track nó
         temp_file = os.path.join(tempfile.gettempdir(), filename)
         if temp_file not in st.session_state.temp_files:
             st.session_state.temp_files.append(temp_file)
+        
         return temp_file
 
     with col_right:
-        # ======================= TYPE SELECT =======================
-        new_download_type = st.selectbox("**Type:**", ["Video", "Audio"], index=(0 if st.session_state.last_download_type=="Video" else 1), key="download_type_selector")
+        # ======================= START: CODE ĐÃ SỬA =======================
+        # Sử dụng key để theo dõi sự thay đổi của download type
+        new_download_type = st.selectbox("**Type:**", ["Video", "Audio"], index=0, key="download_type_selector")
+
+        # So sánh với trạng thái trước đó để phát hiện thay đổi
         if st.session_state.last_download_type != new_download_type:
             st.session_state.download_completed = False
             st.session_state.downloaded_file = None
             st.session_state.last_download_type = new_download_type
-            cleanup_temp_files()
+            cleanup_temp_files() # Dọn dẹp file cũ khi thay đổi
             st.rerun()
 
         download_type = new_download_type
 
-        # ======================= QUALITY SELECT & FORMAT RESOLVE =======================
+        # Lưu format_id hiện tại của chất lượng đã chọn
         current_selected_format_id = None
         selected_format = None
 
         if download_type == "Video":
             if st.session_state.formats:
                 format_labels = [f['label'] for f in st.session_state.formats]
-                new_selected_idx = st.selectbox(
-                    "**Quality:**",
-                    range(len(format_labels)),
-                    format_func=lambda x: format_labels[x],
-                    index=0,
-                    key="quality_selector"
-                )
+                
+                new_selected_idx = st.selectbox("**Quality:**", range(len(format_labels)),
+                                            format_func=lambda x: format_labels[x], index=0, key="quality_selector")
+                
                 selected_format = st.session_state.formats[new_selected_idx]
                 current_selected_format_id = selected_format['format_id']
 
@@ -446,161 +540,111 @@ if st.session_state.video_info:
                     fmt = audio_formats[0]['format_id'] if audio_formats else "best[height<=720]/best"
             else:
                 fmt = "best[height<=1080]+bestaudio/best[height<=1080]/best"
-        else:  # Audio
+        else: # Audio - Download video first then convert to MP3
+            # Tải video chất lượng tốt nhất có audio để convert
             if st.session_state.formats:
+                # Tìm format video có audio tốt nhất
                 video_with_audio = [f for f in st.session_state.formats if f['has_audio']]
                 if video_with_audio:
+                    # Chọn chất lượng cao nhất có audio
                     best_video_audio = max(video_with_audio, key=lambda x: x.get('height', 0))
                     fmt = best_video_audio['format_id']
                     current_selected_format_id = f"audio_from_{best_video_audio['format_id']}"
                 else:
+                    # Nếu không có video có audio, tải video + audio riêng rồi merge
                     fmt = "best[height<=720]+bestaudio/bestaudio/best"
                     current_selected_format_id = "audio_from_merged"
             else:
                 fmt = "best+bestaudio/bestaudio/best"
                 current_selected_format_id = "audio_from_best"
-
-        # ======================= CHỐT TRÁNH DOUBLE PREVIEW =======================
-        # Lần đầu: chỉ set state, KHÔNG rerun
-        if st.session_state.last_selected_format_id is None:
+        
+        # Kiểm tra xem lựa chọn format có thay đổi không
+        if st.session_state.last_selected_format_id != current_selected_format_id:
+            st.session_state.download_completed = False
+            st.session_state.downloaded_file = None
             st.session_state.last_selected_format_id = current_selected_format_id
-        else:
-            # Các lần sau: user đổi chất lượng => rerun để reset tiến trình
-            if st.session_state.last_selected_format_id != current_selected_format_id:
-                st.session_state.download_completed = False
-                st.session_state.downloaded_file = None
-                st.session_state.last_selected_format_id = current_selected_format_id
-                cleanup_temp_files()
-                st.rerun()
+            cleanup_temp_files() # Dọn dẹp file cũ khi thay đổi
+            st.rerun()
+        # ======================= END: CODE ĐÃ SỬA =======================
 
-        # ======================= INFO BOX =======================
+        # Generate custom filename with quality info
         outtmpl = generate_custom_filename(url, info, download_type == "Audio", selected_format)
-        filename_preview = os.path.basename(outtmpl)
+        
+        # Show filename preview
+        filename_preview = outtmpl.split('/')[-1]  # Get just the filename part
 
         if info.get('description'):
             st.markdown("##### Description:")
             desc = info.get('description', '')
-            if len(desc) > 350:
-                if 'show_full_desc' not in st.session_state:
-                    st.session_state.show_full_desc = False
-                
-                if st.session_state.show_full_desc:
+            if len(desc) > 1000:
+                st.write(desc[:1000] + "...")
+                with st.expander("Read more"):
                     st.write(desc)
-                    if st.button("ℹ️ Rút gọn", key="collapse_desc"):
-                        st.session_state.show_full_desc = False
-                        st.rerun()
-                else:
-                    st.write(desc[:350] + "...")
-                    if st.button("📖 Xem thêm", key="expand_desc"):
-                        st.session_state.show_full_desc = True
-                        st.rerun()
             else:
                 st.write(desc)
 
         st.markdown("##### Video Info:")
+        # Create compact info list with proper formatting
+        filename_preview = outtmpl.split('/')[-1] if '/' in outtmpl else os.path.basename(outtmpl)
+        
+        # Nếu là audio mode và filename không có .mp3, thêm vào để preview
         if download_type == "Audio" and not filename_preview.endswith('.mp3'):
             filename_preview += '.mp3'
+            
         ffmpeg_available = "Available" if shutil.which("ffmpeg") else "Not found"
-
-        duration = info.get('duration')
+        
+        # Format duration properly
+        duration = info.get('duration')  # Get raw duration in seconds
         if duration and isinstance(duration, (int, float)):
+            # Convert seconds to mm:ss format
             minutes = int(duration) // 60
             seconds = int(duration) % 60
             duration_str = f"{minutes}:{seconds:02d}"
         else:
             duration_str = info.get('duration_string', 'N/A')
-
+        
+        # Extract clean title from Facebook format
         raw_title = info.get('title', 'N/A')
         if ' | ' in raw_title:
+            # Split by | and take the middle part (actual title)
             parts = raw_title.split(' | ')
-            clean_title = parts[1].strip() if len(parts) >= 2 else parts[0].strip()
+            if len(parts) >= 2:
+                clean_title = parts[1].strip()  # The actual title is usually the second part
+            else:
+                clean_title = parts[0].strip()
         else:
             clean_title = raw_title
-
+        
         info_items = [
             f"Title: {clean_title}",
             f"Uploader: {info.get('uploader', 'N/A')}",
             f"Duration: {duration_str}"
         ]
+        
         if info.get('view_count'):
             info_items.append(f"Views: {info.get('view_count', 0):,}")
+            
         info_items.extend([
             f"FFmpeg: {ffmpeg_available}",
             f"Output file: {filename_preview}",
         ])
         
-        # Tạo chuỗi info để kiểm tra độ dài
-        info_text = "\n".join([f"• {item}" for item in info_items])
-        
-        if len(info_text) > 350:
-            if 'show_full_info' not in st.session_state:
-                st.session_state.show_full_info = False
-            
-            if st.session_state.show_full_info:
-                st.markdown(
-                    "<div style='line-height: 1.4; margin: 0.5rem 0;'>" + 
-                    info_text.replace('\n', '<br/>') + 
-                    "</div>", 
-                    unsafe_allow_html=True
-                )
-                if st.button("ℹ️ Rút gọn", key="collapse_info"):
-                    st.session_state.show_full_info = False
-                    st.rerun()
-            else:
-                info_short = info_text[:350] + "..."
-                st.markdown(
-                    "<div style='line-height: 1.4; margin: 0.5rem 0;'>" + 
-                    info_short.replace('\n', '<br/>') + 
-                    "</div>", 
-                    unsafe_allow_html=True
-                )
-                if st.button("📖 Xem thêm", key="expand_info"):
-                    st.session_state.show_full_info = True
-                    st.rerun()
-        else:
-            st.markdown(
-                "<div style='line-height: 1.4; margin: 0.5rem 0;'>" + 
-                "<br/>".join([f"&nbsp;&nbsp;&nbsp;&nbsp;• {item}" for item in info_items]) + 
-                "</div>", 
-                unsafe_allow_html=True
-            )
-
-    # ===================== PROGRESS HOOK =====================
-    def progress_hook(d):
-        nonlocal_vars = {}
-        try:
-            if d.get("status") == "downloading":
-                total = d.get("total_bytes") or d.get("total_bytes_estimate") or 0
-                downloaded = d.get("downloaded_bytes") or 0
-                percent = 0 if total == 0 else int(downloaded * 100 / total)
-                global last_percent
-                if percent != last_percent:
-                    progress.progress(min(percent, 100), text=f"Downloading... {percent}%")
-                    last_percent = percent
-                spd = d.get("speed")
-                eta = d.get("eta")
-                status_text = f"{percent}% | {(spd and f'{spd/1024/1024:.2f} MB/s') or '–'} | ETA: {eta or '–'} s"
-                log_area.info(status_text)
-                error_logs.append(f"PROGRESS: {status_text}")
-            elif d.get("status") == "finished":
-                global file_out
-                file_out = d.get("filename")
-                progress.progress(100, text="Processing & finalizing...")
-                if 'audio' in str(d.get("info_dict", {}).get("ext", "")).lower():
-                    msg = "Converting video to MP3 audio format..."
-                else:
-                    msg = "Processing & converting video format..."
-                log_area.warning(msg)
-                error_logs.append(f"INFO: {msg}")
-        except Exception as e:
-            error_logs.append(f"HOOK_ERR: {e}")
+        # Display as compact list with smaller spacing
+        st.markdown(
+            "<div style='line-height: 1.4; margin: 0.5rem 0;'>" + 
+            "<br/>".join([f"&nbsp;&nbsp;&nbsp;&nbsp;• {item}" for item in info_items]) + 
+            "</div>", 
+            unsafe_allow_html=True
+        )
 
     # ===================== AUTO DOWNLOAD =====================
     if not st.session_state.download_completed:
+        # ĐỪNG clear log để expander không mất sau rerun
         temp_cookies = None
         try:
             ensure_download_dir(outtmpl)
-            is_audio_only = (download_type == "Audio")
+            is_audio_only = download_type == "Audio"
+
             ydl_opts = build_opts(
                 outtmpl=outtmpl,
                 cookies_path=temp_cookies,
@@ -630,29 +674,47 @@ if st.session_state.video_info:
                 if file_out and Path(file_out).exists():
                     final_file = file_out
                 else:
+                    # Tìm file đã convert - check cả .mp3 và .mp4
+                    final_file = None
+                    
+                    # Trước tiên check file trong temp_files
                     for temp_file in st.session_state.temp_files:
                         if Path(temp_file).exists():
                             final_file = temp_file
                             break
+                    
+                    # Nếu không tìm thấy và đang convert audio, tìm file .mp3
                     if not final_file and is_audio_only:
                         temp_dir = tempfile.gettempdir()
-                        mp3_files = glob.glob(os.path.join(temp_dir, "*.mp3"))
+                        # Tìm tất cả file .mp3 trong temp dir có thể match
+                        pattern = os.path.join(temp_dir, "*.mp3")
+                        mp3_files = glob.glob(pattern)
+                        
+                        # Sắp xếp theo thời gian tạo, lấy file mới nhất
                         if mp3_files:
                             mp3_files.sort(key=os.path.getmtime, reverse=True)
+                            
+                            # Kiểm tra file có chứa video_id không
                             video_id = info.get('id', '')
                             for mp3_file in mp3_files:
-                                if video_id in os.path.basename(mp3_file) or os.path.getmtime(mp3_file) > (time.time() - 300):
+                                if video_id in os.path.basename(mp3_file) or os.path.getmtime(mp3_file) > (time.time() - 300):  # File tạo trong 5 phút qua
                                     final_file = mp3_file
+                                    # Thêm vào temp_files để track
                                     if final_file not in st.session_state.temp_files:
                                         st.session_state.temp_files.append(final_file)
                                     break
+                    
+                    # Nếu vẫn không tìm thấy, tìm file .mp4/.m4a mới nhất
                     if not final_file:
                         temp_dir = tempfile.gettempdir()
                         extensions = ['*.mp4', '*.m4a', '*.webm'] if not is_audio_only else ['*.mp3', '*.m4a']
+                        
                         for ext in extensions:
-                            files = glob.glob(os.path.join(temp_dir, ext))
+                            pattern = os.path.join(temp_dir, ext)
+                            files = glob.glob(pattern)
                             if files:
                                 files.sort(key=os.path.getmtime, reverse=True)
+                                # Lấy file mới nhất (tạo trong 5 phút qua)
                                 recent_file = files[0]
                                 if os.path.getmtime(recent_file) > (time.time() - 300):
                                     final_file = recent_file
@@ -663,41 +725,51 @@ if st.session_state.video_info:
                 if final_file and Path(final_file).exists():
                     st.session_state.download_completed = True
                     st.session_state.downloaded_file = final_file
+                    
+                    # Hiển thị thông báo thành công phù hợp
                     if is_audio_only:
                         status_placeholder.success("✅ Audio converted and ready to download!")
                     else:
                         status_placeholder.success("✅ Video downloaded successfully!")
+                    
+                    # Clear progress bar and processing message
                     progress.empty()
                     log_area.empty()
                 else:
                     st.warning("❌ Download completed but file not found.")
+                    # Debug info
                     st.error("Debug info:")
                     st.write(f"file_out: {file_out}")
                     st.write(f"temp_files tracked: {st.session_state.temp_files}")
                     st.write(f"is_audio_only: {is_audio_only}")
+                    
+                    # List files in temp dir for debugging
                     temp_dir = tempfile.gettempdir()
                     recent_files = []
                     for ext in ['*.mp3', '*.mp4', '*.m4a', '*.webm']:
                         files = glob.glob(os.path.join(temp_dir, ext))
                         for f in files:
-                            if os.path.getmtime(f) > (time.time() - 600):
+                            if os.path.getmtime(f) > (time.time() - 600):  # Files từ 10 phút qua
                                 recent_files.append(f)
                     st.write(f"Recent temp files: {recent_files}")
             else:
                 st.error(f"❌ Download failed with return code: {ret}")
+                # Clear progress bar on failure
                 progress.empty()
                 log_area.empty()
 
         except ytdlp.utils.DownloadError as e:
             st.error(f"❌ Download Error: {str(e)}")
+            # Clear progress bar on error
             progress.empty()
             log_area.empty()
         except Exception as e:
             st.error(f"Unexpected error: {str(e)}")
+            # Clear progress bar on error
             progress.empty()
             log_area.empty()
 
-    # ====== LOG EXPANDER ======
+    # ====== LOG EXPANDER: luôn render khi đã load video (vị trí ngay trên nút Download) ======
     with st.expander("📋 Show detailed logs"):
         if st.session_state.detailed_logs:
             st.text("\n".join(st.session_state.detailed_logs[-20:]))
@@ -713,6 +785,8 @@ if st.session_state.video_info:
                     file_data = f.read()
                     file_name = Path(st.session_state.downloaded_file).name
                     file_size = len(file_data)
+                    
+                    # Format file size
                     if file_size < 1024:
                         size_str = f"{file_size} B"
                     elif file_size < 1024 * 1024:
@@ -721,7 +795,15 @@ if st.session_state.video_info:
                         size_str = f"{file_size / (1024 * 1024):.1f} MB"
                     else:
                         size_str = f"{file_size / (1024 * 1024 * 1024):.1f} GB"
-                    button_label = f"📥 Download {'Audio' if st.session_state.get('last_download_type')=='Audio' else 'Video'} ({size_str})"
+                    
+                    # Hiển thị label phù hợp với loại file
+                    if st.session_state.get('last_download_type') == "Audio":
+                        button_label = f"📥 Download Audio ({size_str})"
+                        button_icon = "📥"
+                    else:
+                        button_label = f"📥 Download Video ({size_str})"
+                        button_icon = "📥"
+                    
                     st.download_button(
                         label=button_label,
                         data=file_data,
@@ -733,6 +815,7 @@ if st.session_state.video_info:
                     )
             else:
                 st.error("Downloaded file not found!")
+        
 
 else:
     # Hướng dẫn sử dụng
@@ -826,6 +909,6 @@ st.markdown("""
     box-shadow: none;
     backdrop-filter: none;
 ">
-    <p style="margin: 0;">Copyright © hieuvoquoc@gmail.com (V1.04)</p>
+    <p style="margin: 0;">Copyright © hieuvoquoc@gmail.com (V1.03)</p>
 </div>
 """, unsafe_allow_html=True)

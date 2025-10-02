@@ -15,8 +15,25 @@ st.set_page_config(
 st.markdown("""
 <style>
     :root { --text-color: #333333; }
-    @media (prefers-color-scheme: dark) { :root { --text-color: #ffffff; } }
-    .stApp[data-theme="dark"] { --text-color: #ffffff; }
+    @media (prefers-color-scheme: dark) { :root { --text-color: #ffffff;        if info.get('description'):
+            st.markdown("##### Description:")
+            desc = info.get('description', '')
+            if len(desc) > 200:
+                if 'show_full_desc' not in st.session_state:
+                    st.session_state.show_full_desc = False
+                
+                if st.session_state.show_full_desc:
+                    st.write(desc)
+                    if st.button("📖 Rút gọn", key="collapse_desc"):
+                        st.session_state.show_full_desc = False
+                        st.rerun()
+                else:
+                    st.write(desc[:200] + "...")
+                    if st.button("📖 Xem thêm", key="expand_desc"):
+                        st.session_state.show_full_desc = True
+                        st.rerun()
+            else:
+                st.write(desc).stApp[data-theme="dark"] { --text-color: #ffffff; }
     .stApp[data-theme="light"] { --text-color: #333333; }
 
     .main-header {
@@ -343,7 +360,7 @@ if st.session_state.video_info:
                             controls 
                             controlslist="nodownload" 
                             oncontextmenu="return false;" 
-                            style="width: 100%; height: 100%; object-fit: contain;" 
+                            style="max-width: 100%; max-height: 100%; object-fit: contain;" 
                             poster="{info.get('thumbnail', '')}"
                             preload="metadata"
                         >

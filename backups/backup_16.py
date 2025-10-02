@@ -320,7 +320,7 @@ if st.session_state.video_info:
     log_area = st.empty()
     progress = st.empty()
 
-    col_left, col_right = st.columns([2, 3])
+    col_left, col_right = st.columns([1, 1])
 
     with col_left:
         # Use st.empty() to ensure single preview in left column
@@ -343,7 +343,7 @@ if st.session_state.video_info:
                             controls 
                             controlslist="nodownload" 
                             oncontextmenu="return false;" 
-                            style="width: 100%; height: 100%; object-fit: contain;" 
+                            style="max-width: 100%; max-height: 100%; object-fit: contain;" 
                             poster="{info.get('thumbnail', '')}"
                             preload="metadata"
                         >
@@ -480,20 +480,10 @@ if st.session_state.video_info:
         if info.get('description'):
             st.markdown("##### Description:")
             desc = info.get('description', '')
-            if len(desc) > 350:
-                if 'show_full_desc' not in st.session_state:
-                    st.session_state.show_full_desc = False
-                
-                if st.session_state.show_full_desc:
+            if len(desc) > 150:
+                st.write(desc[:150] + "...")
+                with st.expander("📖 Xem thêm"):
                     st.write(desc)
-                    if st.button("ℹ️ Rút gọn", key="collapse_desc"):
-                        st.session_state.show_full_desc = False
-                        st.rerun()
-                else:
-                    st.write(desc[:350] + "...")
-                    if st.button("📖 Xem thêm", key="expand_desc"):
-                        st.session_state.show_full_desc = True
-                        st.rerun()
             else:
                 st.write(desc)
 
@@ -532,31 +522,22 @@ if st.session_state.video_info:
         # Tạo chuỗi info để kiểm tra độ dài
         info_text = "\n".join([f"• {item}" for item in info_items])
         
-        if len(info_text) > 350:
-            if 'show_full_info' not in st.session_state:
-                st.session_state.show_full_info = False
-            
-            if st.session_state.show_full_info:
+        if len(info_text) > 150:
+            # Cắt ngắn tại 150 ký tự
+            info_short = info_text[:150] + "..."
+            st.markdown(
+                "<div style='line-height: 1.4; margin: 0.5rem 0;'>" + 
+                info_short.replace('\n', '<br/>') + 
+                "</div>", 
+                unsafe_allow_html=True
+            )
+            with st.expander("ℹ️ Xem thông tin đầy đủ"):
                 st.markdown(
                     "<div style='line-height: 1.4; margin: 0.5rem 0;'>" + 
                     info_text.replace('\n', '<br/>') + 
                     "</div>", 
                     unsafe_allow_html=True
                 )
-                if st.button("ℹ️ Rút gọn", key="collapse_info"):
-                    st.session_state.show_full_info = False
-                    st.rerun()
-            else:
-                info_short = info_text[:350] + "..."
-                st.markdown(
-                    "<div style='line-height: 1.4; margin: 0.5rem 0;'>" + 
-                    info_short.replace('\n', '<br/>') + 
-                    "</div>", 
-                    unsafe_allow_html=True
-                )
-                if st.button("📖 Xem thêm", key="expand_info"):
-                    st.session_state.show_full_info = True
-                    st.rerun()
         else:
             st.markdown(
                 "<div style='line-height: 1.4; margin: 0.5rem 0;'>" + 
