@@ -97,32 +97,6 @@ st.markdown("""
     }
     
     input::placeholder { font-style: italic; color: #999; }
-    
-    .spinner {
-        display: inline-block;
-        width: 16px;
-        height: 16px;
-        border: 2px solid #f3f3f3;
-        border-top: 2px solid #3498db;
-        border-radius: 50%;
-        animation: spin 1s linear infinite;
-        margin-right: 8px;
-        vertical-align: middle;
-    }
-    
-    @keyframes spin {
-        0% { transform: rotate(0deg); }
-        100% { transform: rotate(360deg); }
-    }
-    
-    .stButton > button[kind="primary"] {
-        background: linear-gradient(0deg, #25A0FA 0%, #25A0FA 100%) !important;
-        color: white !important;
-        border: none !important;
-    }
-    .stButton > button[kind="primary"]:hover {
-        filter: brightness(1.1) !important;
-    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -290,30 +264,12 @@ no_check_cert = True
 
 # ===================== INPUT URL =====================
 st.markdown("### Enter Video URL")
-
-# Use form for better handling of input + button together
-with st.form("url_form", clear_on_submit=False):
-    col_input, col_button = st.columns([15, 1])
-    
-    with col_input:
-        url_input = st.text_input(
-            "Facebook or YouTube video Url:", 
-            placeholder="https://www.facebook.com/reel/...",
-            help="Paste your Facebook video/reel or YouTube video/shorts URL here",
-            key="url_input_form",
-        )
-    
-    with col_button:
-        # Add some spacing to align with input
-        st.markdown("<br>", unsafe_allow_html=True)
-        go_submitted = st.form_submit_button("GO", use_container_width=True, type="primary")
-
-# Handle URL - form ensures both input and button work together
-url = ""
-if go_submitted and url_input.strip():
-    url = url_input.strip()
-elif url_input and url_input.strip():
-    url = url_input.strip()
+url = st.text_input(
+    "🎥 Facebook or YouTube video Url:", 
+    placeholder="https://www.facebook.com/reel/... or https://youtube.com/watch?v=...", 
+    help="Paste your Facebook video/reel or YouTube video/shorts URL here and press Enter",
+    key="url_input",
+)
 
 # Dùng logs trong session để không mất khi rerun
 error_logs = st.session_state.detailed_logs
@@ -339,9 +295,6 @@ if url and url.strip() and url.strip() != st.session_state.current_url:
             if f.get('vcodec') != 'none' and f.get('height'):
                 height = f.get('height', 0)
                 ext = f.get('ext', 'mp4')
-                # Only include MP4 formats in Quality dropdown
-                if ext.lower() != 'mp4':
-                    continue
                 filesize = f.get('filesize') or 0
                 fps = f.get('fps') or 0
                 has_audio = f.get('acodec') != 'none'
@@ -396,9 +349,9 @@ if st.session_state.video_info:
             status_placeholder.success("✅ Video loaded successfully!")
     else:
         if st.session_state.get('last_download_type') == "Audio":
-            status_placeholder.markdown('<span class="spinner"></span> Preparing to download video and convert to MP3...', unsafe_allow_html=True)
+            status_placeholder.warning("🎵 Preparing to download video and convert to MP3...")
         else:
-            status_placeholder.markdown('<span class="spinner"></span> Preparing to processing & converting video format...', unsafe_allow_html=True)
+            status_placeholder.info("✨ Preparing to processing & converting video format...")
 
     # placeholders cho tiến trình & log
     log_area = st.empty()
