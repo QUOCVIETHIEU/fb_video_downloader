@@ -185,15 +185,21 @@ def ensure_download_dir(path_tmpl: str):
 def get_video_info(video_url, max_retries=3):
     for attempt in range(max_retries):
         try:
+            headers = {
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36",
+                "Accept-Language": "en-US,en;q=0.9"
+            }
+            if 'facebook.com' in video_url:
+                headers['Referer'] = 'https://www.facebook.com/'
+            elif 'youtube.com' in video_url or 'youtu.be' in video_url:
+                headers['Referer'] = 'https://www.youtube.com/'
+            
             ydl_opts = {
                 "quiet": True,
                 "no_warnings": True,
                 "nocheckcertificate": True,
                 "listformats": True,
-                "http_headers": {
-                    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36",
-                    "Accept-Language": "en-US,en;q=0.9"
-                }
+                "http_headers": headers
             }
             with ytdlp.YoutubeDL(ydl_opts) as ydl:
                 info = ydl.extract_info(video_url, download=False)
@@ -214,6 +220,7 @@ def get_video_info(video_url, max_retries=3):
                     - **Wait a few minutes** - Some websites temporarily block requests
                     - **Check if the video is public** - Private/restricted videos cannot be downloaded
                     - **For YouTube Shorts**: Use the full URL, not the mobile short link
+                    - **Consider using a VPN/Proxy** if access is geo-restricted (advanced users)
                     """)
             else:
                 st.error(f"❌ Failed to get video info: {error_msg}")
@@ -229,9 +236,20 @@ def build_opts(
     retries: int,
     proxy: Optional[str],
     no_check_certificate: bool = False,
-    is_audio_only: bool = False
+    is_audio_only: bool = False,
+    video_url: str = "" # Thêm tham số video_url
 ) -> Dict[str, Any]:
     ffmpeg_path = shutil.which("ffmpeg")
+    
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36",
+        "Accept-Language": "en-US,en;q=0.9"
+    }
+    if 'facebook.com' in video_url:
+        headers['Referer'] = 'https://www.facebook.com/'
+    elif 'youtube.com' in video_url or 'youtu.be' in video_url:
+        headers['Referer'] = 'https://www.youtube.com/'
+
     opts: Dict[str, Any] = {
         "outtmpl": outtmpl,
         "restrictfilenames": False,
@@ -245,10 +263,7 @@ def build_opts(
         "continuedl": True,
         "concurrent_fragment_downloads": concurrent_fragments or 1,
         "ratelimit": None,
-        "http_headers": {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36",
-            "Accept-Language": "en-US,en;q=0.9"
-        },
+        "http_headers": headers, # Sử dụng headers đã được tạo
         "format": fmt,
         "quiet": False,
         "no_warnings": False,
@@ -774,7 +789,8 @@ if st.session_state.video_info:
                 retries=int(retries),
                 proxy=proxy or None,
                 no_check_certificate=bool(no_check_cert),
-                is_audio_only=is_audio_only
+                is_audio_only=is_audio_only,
+                video_url=url
             )
             ydl_opts["progress_hooks"] = [progress_hook]
 
