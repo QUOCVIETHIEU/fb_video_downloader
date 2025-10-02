@@ -790,7 +790,7 @@ if st.session_state.video_info:
                 proxy=proxy or None,
                 no_check_certificate=bool(no_check_cert),
                 is_audio_only=is_audio_only,
-                video_url=url
+                video_url=url # Thêm dòng này
             )
             ydl_opts["progress_hooks"] = [progress_hook]
 
