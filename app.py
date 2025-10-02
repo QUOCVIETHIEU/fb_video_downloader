@@ -182,55 +182,109 @@ def ensure_download_dir(path_tmpl: str):
     else:
         Path(path_tmpl).parent.mkdir(parents=True, exist_ok=True)
 
-def get_video_info(video_url, max_retries=3):
+def get_video_info(video_url, max_retries=5):
+    # Kiểm tra nếu là YouTube và đưa ra cảnh báo ngay từ đầu
+    if "youtube.com" in video_url or "youtu.be" in video_url:
+        st.warning("⚠️ YouTube videos may not work on Streamlit Cloud due to restrictions. Facebook videos work better!")
+    
     # Danh sách các User-Agent khác nhau để thử
     user_agents = [
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36", 
         "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:109.0) Gecko/20100101 Firefox/121.0"
+        "Mozilla/5.0 (iPhone; CPU iPhone OS 16_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.0 Mobile/15E148 Safari/604.1",
+        "Mozilla/5.0 (Android 13; Mobile; rv:109.0) Gecko/113.0 Firefox/113.0"
     ]
     
-    for attempt in range(max_retries):
+    # Danh sách proxy công cộng (có thể không hoạt động lâu dài)
+    proxies = [
+        None,  # Không dùng proxy
+        "socks5://proxy.example.com:1080",  # Placeholder - cần proxy thực
+    ]
+    
+    # Thử với các phương pháp khác nhau
+    methods = [
+        {"name": "Standard Browser", "use_proxy": False, "mobile": False, "bypass": True},
+        {"name": "Mobile Browser", "use_proxy": False, "mobile": True, "bypass": True}, 
+        {"name": "Direct Connection", "use_proxy": False, "mobile": False, "bypass": False},
+        {"name": "Mobile Direct", "use_proxy": False, "mobile": True, "bypass": False},
+        {"name": "Android YouTube App", "use_proxy": False, "mobile": False, "bypass": True, "alt_extractor": True}
+    ]
+    
+    # Tạo progress container nếu là YouTube
+    progress_container = None
+    if "youtube.com" in video_url or "youtu.be" in video_url:
+        progress_container = st.empty()
+    
+    for attempt in range(min(max_retries, len(methods))):
         try:
-            # Sử dụng User-Agent khác nhau cho mỗi lần thử
-            user_agent = user_agents[attempt % len(user_agents)]
+            method = methods[attempt]
+            
+            # Chọn User-Agent dựa trên method
+            if method.get("mobile"):
+                user_agent = user_agents[3]  # iPhone UA
+            else:
+                user_agent = user_agents[attempt % 3]
             
             ydl_opts = {
                 "quiet": True,
                 "no_warnings": True,
                 "nocheckcertificate": True,
                 "listformats": True,
-                "extractor_retries": 3,
-                "socket_timeout": 30,
-                "geo_bypass": True,
-                "geo_bypass_country": "US",
-                "sleep_interval": 1,
-                "max_sleep_interval": 3,
+                "extractor_retries": 2,
+                "socket_timeout": 20,
+                "sleep_interval": 2,
+                "max_sleep_interval": 5,
                 "http_headers": {
                     "User-Agent": user_agent,
                     "Accept-Language": "en-US,en;q=0.9",
                     "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
                     "Accept-Encoding": "gzip, deflate",
-                    "Connection": "keep-alive",
-                    "Upgrade-Insecure-Requests": "1",
-                    "Sec-Fetch-Dest": "document",
-                    "Sec-Fetch-Mode": "navigate",
-                    "Sec-Fetch-Site": "none"
+                    "Connection": "keep-alive"
                 }
             }
             
-            # Thêm tùy chọn đặc biệt cho YouTube khi deploy
+            # Thêm geo bypass nếu method yêu cầu
+            if method.get("bypass"):
+                ydl_opts.update({
+                    "geo_bypass": True,
+                    "geo_bypass_country": "US"
+                })
+            
+            # Thêm tùy chọn đặc biệt cho YouTube
             if "youtube.com" in video_url or "youtu.be" in video_url:
                 ydl_opts.update({
                     "youtube_include_dash_manifest": False,
                     "youtube_skip_dash_manifest": True,
                     "writesubtitles": False,
-                    "writeautomaticsub": False
+                    "writeautomaticsub": False,
+                    "extract_flat": False,
+                    "ignoreerrors": False
                 })
+                
+                # Thử extractor thay thế - Android client thường work tốt nhất
+                if method.get("alt_extractor"):
+                    ydl_opts["extractor_args"] = {
+                        "youtube": {
+                            "player_client": ["android", "web", "ios"]
+                        }
+                    }
+                    # Đổi User-Agent thành Android YouTube app
+                    ydl_opts["http_headers"]["User-Agent"] = "com.google.android.youtube/17.31.35 (Linux; U; Android 11) gzip"
+            
+            # Hiển thị progress nếu có container
+            if progress_container:
+                progress_container.info(f"🔄 Trying method: **{method['name']}** (Attempt {attempt + 1}/{max_retries})")
             
             with ytdlp.YoutubeDL(ydl_opts) as ydl:
                 info = ydl.extract_info(video_url, download=False)
+                
+                # Clear progress và hiển thị success
+                if progress_container:
+                    progress_container.success(f"✅ Success with method: **{method['name']}**")
+                else:
+                    st.success(f"✅ Video info retrieved successfully!")
+                
                 return info
         except Exception as e:
             error_msg = str(e)
@@ -253,25 +307,65 @@ def get_video_info(video_url, max_retries=3):
                     - **For YouTube Shorts**: Use the full URL, not the mobile short link
                     """)
             elif "403" in error_msg or "Forbidden" in error_msg:
-                st.error("❌ YouTube has blocked this request. This is common on hosted platforms like Streamlit Cloud.")
-                with st.expander("🔧 Why this happens & Solutions"):
-                    st.markdown("""
-                    **Why YouTube blocks hosted platforms:**
-                    - YouTube actively blocks server-based downloads to prevent abuse
-                    - Streamlit Cloud servers are detected and restricted
-                    - This works locally but fails on cloud hosting
+                # Nếu là YouTube và đã thử hết các method
+                if ("youtube.com" in video_url or "youtu.be" in video_url) and attempt == max_retries - 1:
+                    st.error("❌ YouTube has blocked all attempts. This is common on hosted platforms like Streamlit Cloud.")
                     
-                    **Suggested solutions:**
-                    - **Try Facebook videos instead** - They usually work better
-                    - **Use shorter videos** - Less likely to be blocked
-                    - **Wait and retry** - Sometimes temporary blocks are lifted
-                    - **Try different YouTube URLs** - Some videos may work while others don't
+                    # Đưa ra giao diện chọn alternatives
+                    st.markdown("### 🔄 **Alternative Options:**")
                     
-                    **Alternative:** Consider running this app locally for YouTube downloads.
-                    """)
+                    col1, col2 = st.columns(2)
+                    with col1:
+                        st.info("**✅ Try Facebook Videos**\nFacebook videos work much better on hosted platforms!")
+                        
+                    with col2:
+                        st.info("**💻 Run Locally**\nDownload this app and run on your computer for YouTube support.")
+                    
+                    # Hướng dẫn cụ thể
+                    with st.expander("📱 **How to get Facebook video URLs**"):
+                        st.markdown("""
+                        1. **On Mobile Facebook App:**
+                           - Tap the **Share** button on the video
+                           - Select **Copy Link**
+                           - Paste the link here
+                           
+                        2. **On Facebook Website:**
+                           - Right-click on the video
+                           - Select **Copy video URL** or **Copy link address**
+                           - Paste the link here
+                        """)
+                        
+                    with st.expander("💻 **How to run this app locally**"):
+                        st.markdown("""
+                        ```bash
+                        # Clone the repository
+                        git clone https://github.com/QUOCVIETHIEU/fb_video_downloader.git
+                        cd fb_video_downloader
+                        
+                        # Install dependencies
+                        pip install -r requirements.txt
+                        
+                        # Run the app
+                        streamlit run app.py
+                        ```
+                        
+                        **Benefits of running locally:**
+                        - ✅ YouTube videos work perfectly
+                        - ✅ Faster download speeds  
+                        - ✅ No server restrictions
+                        - ✅ Better reliability
+                        """)
+                    
+                    return None
+                else:
+                    st.warning(f"⚠️ Method '{methods[attempt]['name']}' failed. Trying next method...")
+                    time.sleep(2)
+                    continue
             else:
-                st.error(f"❌ Failed to get video info: {error_msg}")
-            return None
+                st.error(f"❌ Method '{methods[attempt]['name']}' failed: {error_msg}")
+                if attempt < max_retries - 1:
+                    time.sleep(2)
+                    continue
     return None
 
 def build_opts(
