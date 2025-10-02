@@ -227,21 +227,13 @@ def get_enhanced_headers(platform="youtube", attempt=0):
         
     return base_headers
 
-def get_video_info(video_url, max_retries=5):
-    """Enhanced video info extraction with Streamlit Cloud optimizations"""
-    # Increase retries for Streamlit Cloud
-    if is_streamlit_cloud():
-        max_retries = 7
-        
-    # Detect platform
-    platform = "youtube" if any(x in video_url for x in ["youtube.com", "youtu.be"]) else "facebook"
-    
-    for attempt in range(max_retries):
-        try:
-            # Get enhanced headers for current attempt and platform
-            headers = get_enhanced_headers(platform, attempt)
-            
-            ydl_opts = {
+def get_video_info_with_fallback(video_url, attempt_num=0):
+    """Try different extraction methods for YouTube"""
+    methods = [
+        # Method 1: Standard with enhanced headers
+        {
+            "name": "Enhanced Headers",
+            "opts": lambda headers: {
                 "quiet": True,
                 "no_warnings": True,
                 "nocheckcertificate": True,
@@ -251,25 +243,131 @@ def get_video_info(video_url, max_retries=5):
                 "socket_timeout": 60,
                 "http_headers": headers
             }
-            
-            # Streamlit Cloud specific optimizations
-            if is_streamlit_cloud():
-                ydl_opts.update({
-                    "retries": 10,
-                    "fragment_retries": 15,
-                    "sleep_interval": 1,
-                    "max_sleep_interval": 5,
-                    "sleep_interval_subtitles": 0
-                })
-                
-            with ytdlp.YoutubeDL(ydl_opts) as ydl:
-                info = ydl.extract_info(video_url, download=False)
-                return info
+        },
+        # Method 2: Use different client
+        {
+            "name": "Web Client",
+            "opts": lambda headers: {
+                "quiet": True,
+                "no_warnings": True,
+                "nocheckcertificate": True,
+                "listformats": True,
+                "extractor_retries": 3,
+                "http_headers": headers,
+                "extractor_args": {
+                    "youtube": {
+                        "player_client": ["web"],
+                        "skip": ["dash", "hls"]
+                    }
+                }
+            }
+        },
+        # Method 3: Mobile client
+        {
+            "name": "Mobile Client",
+            "opts": lambda headers: {
+                "quiet": True,
+                "no_warnings": True,
+                "nocheckcertificate": True,
+                "listformats": True,
+                "http_headers": {
+                    "User-Agent": "com.google.android.youtube/19.09.37 (Linux; U; Android 11) gzip",
+                    "Accept-Language": "en-US,en;q=0.9"
+                },
+                "extractor_args": {
+                    "youtube": {
+                        "player_client": ["android"],
+                        "skip": ["dash"]
+                    }
+                }
+            }
+        },
+        # Method 4: TV client  
+        {
+            "name": "TV Client",
+            "opts": lambda headers: {
+                "quiet": True,
+                "no_warnings": True, 
+                "nocheckcertificate": True,
+                "listformats": True,
+                "http_headers": headers,
+                "extractor_args": {
+                    "youtube": {
+                        "player_client": ["tv_embedded"],
+                        "skip": ["hls"]
+                    }
+                }
+            }
+        }
+    ]
+    
+    platform = "youtube" if any(x in video_url for x in ["youtube.com", "youtu.be"]) else "facebook"
+    headers = get_enhanced_headers(platform, attempt_num)
+    
+    # Try each method
+    method = methods[attempt_num % len(methods)]
+    ydl_opts = method["opts"](headers)
+    
+    # Add Streamlit Cloud optimizations
+    if is_streamlit_cloud():
+        ydl_opts.update({
+            "retries": 10,
+            "fragment_retries": 15,
+            "sleep_interval": 1,
+            "max_sleep_interval": 5
+        })
+    
+    try:
+        with ytdlp.YoutubeDL(ydl_opts) as ydl:
+            info = ydl.extract_info(video_url, download=False)
+            return info, method["name"]
+    except Exception as e:
+        raise e
+
+def get_video_info(video_url, max_retries=8):
+    """Enhanced video info extraction with multiple fallback methods"""
+    # Increase retries for Streamlit Cloud
+    if is_streamlit_cloud():
+        max_retries = 10
+        
+    # Detect platform
+    platform = "youtube" if any(x in video_url for x in ["youtube.com", "youtu.be"]) else "facebook"
+    
+    for attempt in range(max_retries):
+        try:
+            info, method_used = get_video_info_with_fallback(video_url, attempt)
+            if attempt > 0:  # Show success message if it took multiple attempts
+                st.success(f"✅ Successfully extracted info using {method_used} (attempt {attempt + 1})")
+            return info
         except Exception as e:
             error_msg = str(e)
             
+            # Handle YouTube player response errors specifically
+            if "Failed to extract any player response" in error_msg:
+                if attempt < max_retries - 1:
+                    method_names = ["Enhanced Headers", "Web Client", "Mobile Client", "TV Client"]
+                    current_method = method_names[attempt % len(method_names)]
+                    next_method = method_names[(attempt + 1) % len(method_names)]
+                    st.warning(f"⚠️ YouTube API changed. Trying {next_method}... (attempt {attempt + 1}/{max_retries})")
+                    time.sleep(2)
+                    continue
+                else:
+                    st.error("❌ YouTube has updated their system. All extraction methods failed.")
+                    with st.expander("🔧 Solutions for YouTube Extraction Errors"):
+                        st.markdown("""
+                        **Try these solutions:**
+                        - Wait 10-15 minutes and try again
+                        - Copy the URL from a fresh incognito browser tab
+                        - Try a different YouTube video to test if it's video-specific
+                        - Use the full YouTube URL (not shortened youtu.be links)
+                        
+                        **Technical info:**
+                        - YouTube frequently updates their API to prevent downloads
+                        - yt-dlp needs time to adapt to these changes
+                        - This is temporary - usually fixed within hours/days
+                        """)
             # Handle 403 Forbidden errors specifically  
-            if "403" in error_msg or "Forbidden" in error_msg:
+            elif "403" in error_msg or "Forbidden" in error_msg:
                 if attempt < max_retries - 1:
                     delay = 5 if is_streamlit_cloud() else 3
                     st.warning(f"⚠️ Access denied (attempt {attempt + 1}). Trying different approach... ({attempt + 2}/{max_retries})")
@@ -308,11 +406,11 @@ def get_video_info(video_url, max_retries=5):
                     """)
             else:
                 if attempt < max_retries - 1:
-                    st.warning(f"⚠️ Error occurred (attempt {attempt + 1}): {error_msg[:100]}... Retrying...")
+                    st.warning(f"⚠️ Error occurred (attempt {attempt + 1}): {error_msg[:100]}... Retrying with different method...")
                     time.sleep(2)
                     continue
                 else:
-                    st.error(f"❌ Failed to get video info: {error_msg}")
+                    st.error(f"❌ Failed to get video info after {max_retries} attempts: {error_msg}")
             return None
     return None
 
