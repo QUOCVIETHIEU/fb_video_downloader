@@ -825,24 +825,26 @@ else:
     with col2:
         st.markdown("""
         <div style="
-            background: rgba(255, 255, 255, 0.05);
-            color: var(--text-color);
+            background: #f5f5f5;
+            color: #333333;
             padding: 1.5rem;
             border-radius: 15px;
             text-align: center;
             margin: 2rem 0;
-            border: 1px solid rgba(200, 200, 200, 0.2);
+            border: 1px solid #e0e0e0;
+            box-shadow: 0 4px 8px rgba(0,0,0,0.1);
         ">
-        <h3 style="margin: 0 0 0.5rem 0; font-weight: 600; text-align: center; color: inherit;">
+        <h3 style="margin: 0 0 0.5rem 0; font-weight: 600; text-align: center; color: #333333;">
             How To Download Facebook Videos
         </h3>
         <div style="
-            background: rgba(255,255,255,0.1);
+            background: #f5f5f5
             padding: 1.5rem;
             border-radius: 10px;
             margin: 0.5rem 0;
             display: flex;
             justify-content: center;
+            border: none;
         ">
             <div style="text-align: left;">
                 <div style="display: flex; align-items: center; margin-bottom: 1rem;">
@@ -857,8 +859,9 @@ else:
                         justify-content: center;
                         margin-right: 1rem;
                         font-weight: bold;
+                        box-shadow: 0 2px 4px rgba(40,167,69,0.3);
                     ">1</span>
-                    <span style="font-size: 1.1rem; color: inherit;">Copy Facebook video/reel URL</span>
+                    <span style="font-size: 1.1rem; color: #333333; font-weight: 500;">Copy Facebook video/reel URL</span>
                 </div>
                 <div style="display: flex; align-items: center; margin-bottom: 1rem;">
                     <span style="
@@ -872,8 +875,9 @@ else:
                         justify-content: center;
                         margin-right: 1rem;
                         font-weight: bold;
+                        box-shadow: 0 2px 4px rgba(0,123,255,0.3);
                     ">2</span>
-                    <span style="font-size: 1.1rem; color: inherit;">Paste URL in the input box above</span>
+                    <span style="font-size: 1.1rem; color: #333333; font-weight: 500;">Paste URL in the input box above</span>
                 </div>
                 <div style="display: flex; align-items: center;">
                     <span style="
@@ -887,8 +891,9 @@ else:
                         justify-content: center;
                         margin-right: 1rem;
                         font-weight: bold;
+                        box-shadow: 0 2px 4px rgba(255,193,7,0.3);
                     ">3</span>
-                    <span style="font-size: 1.1rem; color: inherit;">Press GO or Enter to download</span>
+                    <span style="font-size: 1.1rem; color: #333333; font-weight: 500;">Press GO or Enter to download</span>
                 </div>
             </div>
         </div>
@@ -915,6 +920,6 @@ st.markdown("""
     box-shadow: none;
     backdrop-filter: none;
 ">
-        <p style="margin: 0;">Copyright © hieuvoquoc@gmail.com (V1.06 - Facebook Video Downloader with Auto Dark Mode)</p>
+        <p style="margin: 0;">Copyright © hieuvoquoc@gmail.com (V1.06)</p>
 </div>
 """, unsafe_allow_html=True)
